@@ -1,0 +1,32 @@
+name: Build & Release RBZ
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write   # нужно для создания GitHub Release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+
+      - name: Run Smoke Tests
+        run: ruby test/smoke_test.rb
+
+      - name: Build all RBZ
+        run: ruby tools/pack.rb
+
+      - name: Create GitHub Release with all RBZ
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            packages/*.rbz

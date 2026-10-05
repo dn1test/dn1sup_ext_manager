@@ -1,0 +1,1135 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DN1Sup Extension Store — Каталог расширений</title>
+  <style>
+    :root {
+      --bg-color: #0b1120;
+      --header-bg: #111827;
+      --card-bg: #1e293b;
+      --card-hover-bg: #243248;
+      --card-border: #334155;
+      --card-hover-border: #475569;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --primary-glow: rgba(59, 130, 246, 0.25);
+      --success: #10b981;
+      --success-hover: #059669;
+      --warning: #f59e0b;
+      --warning-hover: #d97706;
+      --danger: #ef4444;
+      --danger-hover: #dc2626;
+      --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      height: 100%;
+      width: 100%;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      font-family: var(--font-family);
+      font-size: 13px;
+      line-height: 1.45;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Fixed App Layout Shell */
+    .app-shell {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      max-height: 100vh;
+      width: 100%;
+      overflow: hidden;
+    }
+
+    /* Pinned Header */
+    .app-header {
+      flex-shrink: 0;
+      background: var(--header-bg);
+      border-bottom: 1px solid var(--card-border);
+      padding: 13px 20px 11px 20px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+      z-index: 20;
+    }
+
+    .header-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 11px;
+    }
+
+    .title-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .store-logo {
+      font-size: 20px;
+      line-height: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 34px;
+      height: 34px;
+      background: linear-gradient(135deg, rgba(59, 130, 246, 0.22), rgba(139, 92, 246, 0.22));
+      border: 1px solid rgba(59, 130, 246, 0.35);
+      border-radius: 8px;
+    }
+
+    .title-text h1 {
+      font-size: 15.5px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .title-text p {
+      font-size: 11.5px;
+      color: var(--text-muted);
+      margin-top: 1px;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* Controls: Search and Tabs */
+    .controls-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: nowrap;
+    }
+
+    .search-box {
+      position: relative;
+      flex: 1;
+      min-width: 180px;
+    }
+
+    .search-box input {
+      width: 100%;
+      height: 32px;
+      background: #1e293b;
+      border: 1px solid var(--card-border);
+      border-radius: 6px;
+      padding: 0 10px 0 30px;
+      color: var(--text-main);
+      font-size: 12.5px;
+      outline: none;
+      transition: all 0.2s;
+    }
+
+    .search-box input:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 2px var(--primary-glow);
+    }
+
+    .search-box input::placeholder {
+      color: var(--text-dim);
+    }
+
+    .search-icon {
+      position: absolute;
+      left: 9px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-muted);
+      font-size: 12px;
+      pointer-events: none;
+    }
+
+    .filter-tabs {
+      display: flex;
+      background: #1e293b;
+      border: 1px solid var(--card-border);
+      border-radius: 6px;
+      padding: 2px;
+      gap: 2px;
+      flex-shrink: 0;
+    }
+
+    .tab-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      padding: 4px 10px;
+      border-radius: 4px;
+      font-size: 11.5px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      white-space: nowrap;
+    }
+
+    .tab-btn:hover {
+      color: var(--text-main);
+    }
+
+    .tab-btn.active {
+      background: #334155;
+      color: #ffffff;
+      font-weight: 600;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+    }
+
+    /* Scrollable Products Container */
+    .products-scroll-area {
+      flex: 1 1 auto;
+      height: 100%;
+      overflow-y: scroll;
+      overflow-x: hidden;
+      padding: 12px 18px 24px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      scroll-behavior: smooth;
+    }
+
+    /* Custom Webkit Scrollbar */
+    .products-scroll-area::-webkit-scrollbar {
+      width: 8px;
+    }
+    .products-scroll-area::-webkit-scrollbar-track {
+      background: rgba(11, 17, 32, 0.6);
+    }
+    .products-scroll-area::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 4px;
+      border: 2px solid transparent;
+      background-clip: padding-box;
+    }
+    .products-scroll-area::-webkit-scrollbar-thumb:hover {
+      background: #475569;
+    }
+
+    /* Compact, Modern Product Card */
+    .product-card {
+      background-color: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      transition: background-color 0.15s, border-color 0.15s, box-shadow 0.15s;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .product-card:hover {
+      background-color: var(--card-hover-bg);
+      border-color: var(--card-hover-border);
+      box-shadow: 0 3px 12px rgba(0, 0, 0, 0.22);
+    }
+
+    .product-card.has-update-card {
+      border-color: rgba(245, 158, 11, 0.35);
+      background: linear-gradient(180deg, rgba(245, 158, 11, 0.05) 0%, #1e293b 100%);
+    }
+
+    .product-card.has-update-card:hover {
+      border-color: rgba(245, 158, 11, 0.55);
+    }
+
+    /* Card Main Row (Icon + Info + Actions) */
+    .card-main-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    /* Plugin Icon Avatar */
+    .card-icon {
+      flex-shrink: 0;
+      width: 38px;
+      height: 38px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      background: rgba(11, 17, 32, 0.65);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.05);
+    }
+
+    /* Plugin Info */
+    .card-body {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .card-header-line {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      flex-wrap: wrap;
+      margin-bottom: 2px;
+    }
+
+    .product-name {
+      font-size: 14px;
+      font-weight: 600;
+      color: #ffffff;
+      white-space: nowrap;
+    }
+
+    .product-id-badge {
+      font-size: 10.5px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      color: var(--text-dim);
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 1px 5px;
+      border-radius: 4px;
+    }
+
+    /* Status Badges */
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      font-size: 11px;
+      font-weight: 500;
+      padding: 1.5px 7px;
+      border-radius: 10px;
+      white-space: nowrap;
+    }
+
+    .status-installed {
+      background: rgba(16, 185, 129, 0.12);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.28);
+    }
+
+    .status-update-available {
+      background: rgba(245, 158, 11, 0.15);
+      color: #fbbf24;
+      border: 1px solid rgba(245, 158, 11, 0.35);
+      font-weight: 600;
+    }
+
+    .status-not-installed {
+      background: rgba(148, 163, 184, 0.1);
+      color: #94a3b8;
+      border: 1px solid rgba(148, 163, 184, 0.18);
+    }
+
+    .product-description {
+      font-size: 12px;
+      color: #94a3b8;
+      line-height: 1.35;
+      margin-bottom: 4px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* Meta row: Version info & Changelog trigger */
+    .card-meta-line {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 11.5px;
+      color: var(--text-dim);
+      flex-wrap: wrap;
+    }
+
+    .version-tag {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      color: #cbd5e1;
+    }
+
+    .version-tag .val-highlight {
+      color: #38bdf8;
+      font-weight: 600;
+    }
+
+    .version-tag .val-new {
+      color: #fbbf24;
+      font-weight: 600;
+    }
+
+    .changelog-toggle-btn {
+      background: transparent;
+      border: none;
+      color: #93c5fd;
+      font-size: 11.5px;
+      font-weight: 500;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      padding: 0;
+      transition: color 0.15s;
+    }
+
+    .changelog-toggle-btn:hover {
+      color: #bfdbfe;
+      text-decoration: underline;
+    }
+
+    .changelog-toggle-btn .chevron {
+      font-size: 8px;
+      transition: transform 0.2s;
+    }
+
+    .changelog-toggle-btn.active .chevron {
+      transform: rotate(180deg);
+    }
+
+    /* Card Action Buttons */
+    .card-actions-group {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      padding: 5px 11px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: all 0.15s ease;
+      outline: none;
+      white-space: nowrap;
+      height: 30px;
+    }
+
+    .btn:active:not(:disabled) {
+      transform: scale(0.97);
+    }
+
+    .btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+      pointer-events: none;
+    }
+
+    .btn-primary {
+      background-color: var(--primary);
+      color: #ffffff;
+      border-color: rgba(255, 255, 255, 0.1);
+    }
+    .btn-primary:hover:not(:disabled) {
+      background-color: var(--primary-hover);
+    }
+
+    .btn-update {
+      background-color: #d97706;
+      color: #ffffff;
+      font-weight: 600;
+      border-color: rgba(251, 191, 36, 0.35);
+      box-shadow: 0 0 8px rgba(245, 158, 11, 0.3);
+    }
+    .btn-update:hover:not(:disabled) {
+      background-color: #f59e0b;
+      box-shadow: 0 0 12px rgba(245, 158, 11, 0.45);
+    }
+
+    .btn-outline-danger {
+      background: transparent;
+      color: #f87171;
+      border-color: rgba(239, 68, 68, 0.35);
+      padding: 5px 8px;
+    }
+    .btn-outline-danger:hover:not(:disabled) {
+      background: rgba(239, 68, 68, 0.15);
+      border-color: var(--danger);
+      color: #fca5a5;
+    }
+
+    .btn-secondary {
+      background: #334155;
+      color: #e2e8f0;
+      border-color: rgba(255, 255, 255, 0.06);
+    }
+    .btn-secondary:hover:not(:disabled) {
+      background: #475569;
+      color: #ffffff;
+    }
+
+    /* Expandable Changelog drawer */
+    .card-changelog-drawer {
+      display: none;
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .card-changelog-drawer.expanded {
+      display: block;
+    }
+
+    .changelog-box {
+      background: rgba(11, 17, 32, 0.75);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 6px;
+      padding: 7px 11px;
+      font-size: 11.5px;
+      color: #cbd5e1;
+      max-height: 120px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      line-height: 1.45;
+    }
+
+    .changelog-box::-webkit-scrollbar {
+      width: 6px;
+    }
+    .changelog-box::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 3px;
+    }
+
+    /* Toasts */
+    .toast-container {
+      position: fixed;
+      top: 14px;
+      right: 16px;
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      pointer-events: none;
+    }
+
+    .toast {
+      pointer-events: auto;
+      padding: 8px 14px;
+      border-radius: 7px;
+      font-size: 12.5px;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+      animation: slideIn 0.22s ease-out;
+      max-width: 360px;
+    }
+
+    @keyframes slideIn {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+
+    .toast-success {
+      background: #065f46;
+      border: 1px solid #10b981;
+      color: #d1fae5;
+    }
+
+    .toast-error {
+      background: #7f1d1d;
+      border: 1px solid #ef4444;
+      color: #fee2e2;
+    }
+
+    .toast-info {
+      background: #1e3a8a;
+      border: 1px solid #3b82f6;
+      color: #dbeafe;
+    }
+
+    /* Loading overlay inside card */
+    .card-loading-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(2px);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      z-index: 10;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-main);
+    }
+
+    .spinner {
+      width: 20px;
+      height: 20px;
+      border: 2px solid rgba(255, 255, 255, 0.2);
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Empty state */
+    .empty-state {
+      text-align: center;
+      padding: 40px 20px;
+      color: var(--text-muted);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Toast Messages -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <div class="app-shell">
+    <!-- Pinned Header -->
+    <header class="app-header">
+      <div class="header-top">
+        <div class="title-group">
+          <div class="store-logo">📦</div>
+          <div class="title-text">
+            <h1>DN1Sup Extension Store</h1>
+            <p id="storeSubtitle">Управление расширениями SketchUp из GitHub Releases</p>
+          </div>
+        </div>
+        <div class="header-actions">
+          <button id="btnRefreshAll" class="btn btn-secondary" title="Проверить обновления всех расширений">
+            <span id="refreshIcon">🔄</span>
+            <span>Проверить обновления</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Controls: Search & Filter Tabs -->
+      <div class="controls-row">
+        <div class="search-box">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="searchInput" placeholder="Поиск расширения по названию или ID..." autocomplete="off" spellcheck="false" />
+        </div>
+
+        <div class="filter-tabs">
+          <button class="tab-btn active" data-filter="all">Все (<span id="countAll">0</span>)</button>
+          <button class="tab-btn" data-filter="installed">Установленные (<span id="countInstalled">0</span>)</button>
+          <button class="tab-btn" data-filter="updates">Обновления (<span id="countUpdates">0</span>)</button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Scrollable Products Container -->
+    <main id="productsContainer" class="products-scroll-area">
+      <div class="card-loading-overlay" style="position: static; padding: 40px; background: transparent;">
+        <div class="spinner"></div>
+        <div>Загрузка каталога продуктов...</div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    // State
+    let products = [];
+    let currentFilter = 'all';
+    let searchQuery = '';
+    const loadingStates = {}; // { [id]: 'install' | 'update' | 'uninstall' }
+
+    // Mock data for previewing outside SketchUp (e.g. in browser)
+    const mockProducts = [
+      {
+        id: "dn1sup_autoselect_tag",
+        name: "DN1Sup AutoSelect Tag",
+        description: "Автоматически назначает теги Dimension и Label размерам и текстовым меткам.",
+        repo: "dn1test/sketchup-dn1sup-extensions",
+        asset: "dn1sup_autoselect_tag.rbz",
+        installed_version: "0.1.0",
+        is_installed: true,
+        latest_version: "v0.1.0",
+        has_update: false,
+        changelog: "- Автоматическое тегирование Dimension и Label\n- Безопасное отложенное применение через таймер",
+        release_url: "https://github.com/dn1test/sketchup-dn1sup-extensions/releases/tag/v0.1.0",
+        published_at: "2026-10-04"
+      },
+      {
+        id: "dn1sup_comp_add_view",
+        name: "DN1Sup Component Add View",
+        description: "Копии компонентов и групп со сдвигом влево и поворотом по осям Z и X, проекции вида сверху и сбоку.",
+        repo: "dn1test/sketchup-dn1sup-extensions",
+        asset: "dn1sup_comp_add_view.rbz",
+        installed_version: null,
+        is_installed: false,
+        latest_version: "v0.1.0",
+        has_update: false,
+        changelog: "- Копия слева с поворотом по Z/X\n- Проекции «вид сверху и сбоку» с адаптивным отступом",
+        release_url: "https://github.com/dn1test/sketchup-dn1sup-extensions/releases/tag/v0.1.0",
+        published_at: "2026-10-04"
+      },
+      {
+        id: "dn1sup_ext_manager",
+        name: "DN1Sup Extension Store",
+        description: "Каталог, установка и обновление расширений с GitHub по JSON-реестру.",
+        repo: "dn1test/sketchup-dn1sup-extensions",
+        asset: "dn1sup_ext_manager.rbz",
+        installed_version: "0.2.0",
+        is_installed: true,
+        latest_version: "v0.2.0",
+        has_update: false,
+        changelog: "- Полнофункциональный HTML интерфейс менеджера\n- Прямая установка .rbz архивов из GitHub Releases\n- Проверка новых версий и логов изменений",
+        release_url: "https://github.com/dn1test/sketchup-dn1sup-extensions/releases/tag/v1.0.0",
+        published_at: "2026-10-03"
+      },
+      {
+        id: "dn1sup_time_project2",
+        name: "DN1Sup Time Project 2",
+        description: "Учёт активного времени работы над проектом: статистика по дням, часам и дням недели.",
+        repo: "dn1test/sketchup-dn1sup-extensions",
+        asset: "dn1sup_time_project2.rbz",
+        installed_version: null,
+        is_installed: false,
+        latest_version: "v2.0.0",
+        has_update: false,
+        changelog: "- Учёт времени активности и простоя\n- Встроенные интерактивные графики Chart.js\n- Экспорт статистики в CSV и JSON",
+        release_url: "https://github.com/dn1test/sketchup-dn1sup-extensions/releases/tag/v2.0.0",
+        published_at: "2026-10-03"
+      }
+    ];
+
+    // Notification Toast Helper
+    function showToast(message, type = 'info', duration = 4000) {
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      toast.className = `toast toast-${type}`;
+      
+      const icon = type === 'success' ? '✅' : type === 'error' ? '❌' : 'ℹ️';
+      toast.innerHTML = `<span>${icon}</span><span>${escapeHtml(message)}</span>`;
+      container.appendChild(toast);
+
+      setTimeout(() => {
+        toast.style.transition = 'opacity 0.25s, transform 0.25s';
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateY(-10px)';
+        setTimeout(() => toast.remove(), 250);
+      }, duration);
+    }
+
+    // Helper for HTML escaping
+    function escapeHtml(text) {
+      if (!text) return '';
+      return String(text)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    // Helper for plugin icon
+    function getPluginIcon(id) {
+      const s = String(id || '').toLowerCase();
+      if (s.includes('tag')) return '🏷️';
+      if (s.includes('comp_add_view')) return '📐';
+      if (s.includes('time') || s.includes('clock') || s.includes('timer')) return '⏱️';
+      if (s.includes('ext_manager') || s.includes('store') || s.includes('hub')) return '🛍️';
+      return '🧩';
+    }
+
+    // SketchUp Ruby bridge helper
+    function callRuby(callbackName, ...args) {
+      if (window.sketchup && typeof window.sketchup[callbackName] === 'function') {
+        window.sketchup[callbackName](...args);
+      } else {
+        console.warn(`[Browser Demo] SketchUp callback '${callbackName}' called with:`, args);
+        handleBrowserMockAction(callbackName, ...args);
+      }
+    }
+
+    // Simulated actions for web browser testing
+    function handleBrowserMockAction(action, id) {
+      if (action === 'ready' || action === 'refresh') {
+        setTimeout(() => {
+          renderProducts(mockProducts);
+          showToast(action === 'refresh' ? 'Данные обновлены' : 'Каталог загружен', 'info');
+        }, 200);
+      } else if (action === 'install') {
+        setProductLoading(id, 'Установка расширения...');
+        setTimeout(() => {
+          const item = products.find(p => p.id === id);
+          if (item) {
+            item.is_installed = true;
+            item.installed_version = (item.latest_version || '1.0.0').replace(/^v/, '');
+            item.has_update = false;
+          }
+          setProductLoading(id, null);
+          renderProducts(products);
+          showToast(`Расширение ${item ? item.name : id} успешно установлено!`, 'success');
+        }, 1000);
+      } else if (action === 'update') {
+        setProductLoading(id, 'Обновление расширения...');
+        setTimeout(() => {
+          const item = products.find(p => p.id === id);
+          if (item) {
+            item.installed_version = (item.latest_version || '1.0.0').replace(/^v/, '');
+            item.has_update = false;
+          }
+          setProductLoading(id, null);
+          renderProducts(products);
+          showToast(`Расширение ${item ? item.name : id} успешно обновлено!`, 'success');
+        }, 1000);
+      } else if (action === 'confirm_uninstall') {
+        // В браузере без SketchUp считаем подтверждённым
+        window.confirmResult(id, true);
+      } else if (action === 'uninstall') {
+        setProductLoading(id, 'Удаление...');
+        setTimeout(() => {
+          const item = products.find(p => p.id === id);
+          if (item) {
+            item.is_installed = false;
+            item.installed_version = null;
+            item.has_update = false;
+          }
+          setProductLoading(id, null);
+          renderProducts(products);
+          showToast(`Расширение ${item ? item.name : id} удалено.`, 'info');
+        }, 700);
+      }
+    }
+
+    // Set loading indicator for specific product card
+    function setProductLoading(id, text) {
+      loadingStates[id] = text;
+      const card = document.getElementById(`card-${id}`);
+      if (!card) return;
+
+      const existingOverlay = card.querySelector('.card-loading-overlay');
+      if (text) {
+        if (!existingOverlay) {
+          const overlay = document.createElement('div');
+          overlay.className = 'card-loading-overlay';
+          overlay.innerHTML = `<div class="spinner"></div><div>${escapeHtml(text)}</div>`;
+          card.appendChild(overlay);
+        }
+      } else {
+        if (existingOverlay) existingOverlay.remove();
+      }
+    }
+
+    // Public method called by Ruby to supply fresh product list
+    window.renderProducts = function(list) {
+      products = Array.isArray(list) ? list : [];
+      updateCounts();
+      applyFiltersAndRender();
+    };
+
+    // Public method called by Ruby when action finishes
+    window.handleActionResult = function(id, action, result) {
+      setProductLoading(id, null);
+      if (result && result.ok) {
+        showToast(result.message || 'Операция успешно завершена!', 'success');
+      } else {
+        showToast((result && result.error) || 'Произошла ошибка при выполнении операции.', 'error', 6000);
+      }
+    };
+
+    // Public method to show toast from Ruby
+    window.showNotification = function(message, type) {
+      showToast(message, type);
+    };
+
+    // Update counter badges
+    function updateCounts() {
+      const total = products.length;
+      const installed = products.filter(p => p.is_installed).length;
+      const updates = products.filter(p => p.has_update).length;
+
+      document.getElementById('countAll').textContent = total;
+      document.getElementById('countInstalled').textContent = installed;
+      document.getElementById('countUpdates').textContent = updates;
+
+      const subtitle = document.getElementById('storeSubtitle');
+      subtitle.textContent = `Всего: ${total} • Установлено: ${installed} • Доступно обновлений: ${updates}`;
+    }
+
+    // Filter & search logic
+    function applyFiltersAndRender() {
+      const container = document.getElementById('productsContainer');
+      const q = searchQuery.trim().toLowerCase();
+
+      const filtered = products.filter(p => {
+        // Tab filter
+        if (currentFilter === 'installed' && !p.is_installed) return false;
+        if (currentFilter === 'updates' && !p.has_update) return false;
+
+        // Search query
+        if (q) {
+          const matchName = (p.name || '').toLowerCase().includes(q);
+          const matchId = (p.id || '').toLowerCase().includes(q);
+          const matchDesc = (p.description || '').toLowerCase().includes(q);
+          if (!matchName && !matchId && !matchDesc) return false;
+        }
+
+        return true;
+      });
+
+      if (filtered.length === 0) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <p style="font-size: 26px; margin-bottom: 6px;">🔍</p>
+            <p style="font-size: 14px; font-weight: 600;">Ничего не найдено</p>
+            <p style="font-size: 12px; color: var(--text-muted); margin-top: 3px;">Попробуйте изменить поисковый запрос или фильтр</p>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = filtered.map(p => createProductCardHtml(p)).join('');
+
+      // Restore loading overlay if active
+      filtered.forEach(p => {
+        if (loadingStates[p.id]) {
+          setProductLoading(p.id, loadingStates[p.id]);
+        }
+      });
+    }
+
+    // Generate HTML for a product card (compact & readable)
+    function createProductCardHtml(p) {
+      const isInstalled = !!p.is_installed;
+      const hasUpdate = !!p.has_update;
+      const installedVer = p.installed_version ? p.installed_version : null;
+      const latestVer = p.latest_version ? p.latest_version : '—';
+      const changelog = (p.changelog || '').trim() || 'Описание изменений отсутствует.';
+      const icon = getPluginIcon(p.id);
+
+      // Status pill
+      let statusBadgeHtml = '';
+      if (!isInstalled) {
+        statusBadgeHtml = `<span class="status-badge status-not-installed">○ Не установлено</span>`;
+      } else if (hasUpdate) {
+        statusBadgeHtml = `<span class="status-badge status-update-available">⚡ Обновление</span>`;
+      } else {
+        statusBadgeHtml = `<span class="status-badge status-installed">✓ Установлено</span>`;
+      }
+
+      // Version meta chip
+      let versionMetaHtml = '';
+      if (hasUpdate && installedVer) {
+        versionMetaHtml = `<span class="version-tag">Версия: <span class="val-highlight">${escapeHtml(installedVer)}</span> ➔ <span class="val-new">${escapeHtml(latestVer)}</span></span>`;
+      } else if (isInstalled && installedVer) {
+        versionMetaHtml = `<span class="version-tag">Версия: <span class="val-highlight">v${escapeHtml(installedVer)}</span></span>`;
+      } else {
+        versionMetaHtml = `<span class="version-tag">Доступно: <span class="val-highlight">${escapeHtml(latestVer)}</span></span>`;
+      }
+
+      // Action buttons — без inline onclick: действия и данные в data-атрибутах,
+      // обработка — делегированным слушателем ниже (безопасно для любых символов в id/name)
+      let actionButtonsHtml = '';
+      if (hasUpdate) {
+        actionButtonsHtml = `
+          <button class="btn btn-update" data-action="update" data-id="${escapeHtml(p.id)}" title="Обновить расширение до ${escapeHtml(latestVer)}">
+            <span>⚡</span>
+            <span>Обновить</span>
+          </button>
+          <button class="btn btn-outline-danger" data-action="uninstall" data-id="${escapeHtml(p.id)}" title="Удалить расширение">
+            <span>🗑️</span>
+          </button>
+        `;
+      } else if (isInstalled) {
+        actionButtonsHtml = `
+          <button class="btn btn-secondary" data-action="install" data-id="${escapeHtml(p.id)}" title="Переустановить текущую версию">
+            <span>🔄</span>
+            <span>Переустановить</span>
+          </button>
+          <button class="btn btn-outline-danger" data-action="uninstall" data-id="${escapeHtml(p.id)}" title="Удалить расширение">
+            <span>🗑️</span>
+          </button>
+        `;
+      } else {
+        actionButtonsHtml = `
+          <button class="btn btn-primary" data-action="install" data-id="${escapeHtml(p.id)}" title="Скачать и установить в SketchUp">
+            <span>📥</span>
+            <span>Установить</span>
+          </button>
+        `;
+      }
+
+      return `
+        <article class="product-card ${hasUpdate ? 'has-update-card' : ''}" id="card-${escapeHtml(p.id)}">
+          <div class="card-main-row">
+            <!-- Icon Avatar -->
+            <div class="card-icon" title="${escapeHtml(p.id)}">${icon}</div>
+
+            <!-- Main Info -->
+            <div class="card-body">
+              <div class="card-header-line">
+                <span class="product-name">${escapeHtml(p.name)}</span>
+                <span class="product-id-badge">${escapeHtml(p.id)}</span>
+                ${statusBadgeHtml}
+              </div>
+
+              <div class="product-description" title="${escapeHtml(p.description)}">${escapeHtml(p.description)}</div>
+
+              <div class="card-meta-line">
+                ${versionMetaHtml}
+                <button type="button" class="changelog-toggle-btn" id="btn-changelog-${escapeHtml(p.id)}" data-action="changelog" data-id="${escapeHtml(p.id)}">
+                  <span>Что нового</span>
+                  <span class="chevron">▼</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Actions Group -->
+            <div class="card-actions-group">
+              ${actionButtonsHtml}
+            </div>
+          </div>
+
+          <!-- Expandable Changelog Drawer (collapsed by default) -->
+          <div class="card-changelog-drawer" id="drawer-${escapeHtml(p.id)}">
+            <div class="changelog-box">${escapeHtml(changelog)}</div>
+          </div>
+        </article>
+      `;
+    }
+
+    // Toggle Changelog accordion drawer
+    function toggleChangelog(id) {
+      const drawer = document.getElementById(`drawer-${id}`);
+      const btn = document.getElementById(`btn-changelog-${id}`);
+      if (drawer && btn) {
+        const isExpanded = drawer.classList.toggle('expanded');
+        btn.classList.toggle('active', isExpanded);
+      }
+    }
+
+    // Action button handlers
+    function onInstallClick(id) {
+      setProductLoading(id, 'Установка .rbz...');
+      callRuby('install', id);
+    }
+
+    function onUpdateClick(id) {
+      setProductLoading(id, 'Обновление...');
+      callRuby('update', id);
+    }
+
+    // Подтверждение удаления — через нативный диалог SketchUp (window.confirm
+    // в HtmlDialog на части сборок подавлен).
+    function onUninstallClick(id) {
+      setProductLoading(id, 'Ожидание подтверждения...');
+      callRuby('confirm_uninstall', id);
+    }
+
+    // Ответ Ruby на confirm_uninstall
+    window.confirmResult = function(id, ok) {
+      setProductLoading(id, null);
+      if (!ok) return;
+      setProductLoading(id, 'Удаление...');
+      callRuby('uninstall', id);
+    };
+
+    // Events Setup
+    document.addEventListener('DOMContentLoaded', () => {
+      // Делегированные обработчики карточек (data-action + data-id)
+      document.getElementById('productsContainer').addEventListener('click', (e) => {
+        const btn = e.target.closest('button[data-action]');
+        if (!btn) return;
+        const action = btn.getAttribute('data-action');
+        const id = btn.getAttribute('data-id');
+        if (!id) return;
+
+        if (action === 'install') {
+          onInstallClick(id);
+        } else if (action === 'update') {
+          onUpdateClick(id);
+        } else if (action === 'uninstall') {
+          onUninstallClick(id);
+        } else if (action === 'changelog') {
+          toggleChangelog(id);
+        }
+      });
+
+      // Search input
+      const searchInput = document.getElementById('searchInput');
+      searchInput.addEventListener('input', (e) => {
+        searchQuery = e.target.value;
+        applyFiltersAndRender();
+      });
+
+      // Filter tabs
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          currentFilter = btn.getAttribute('data-filter');
+          applyFiltersAndRender();
+        });
+      });
+
+      // Refresh button
+      const btnRefreshAll = document.getElementById('btnRefreshAll');
+      btnRefreshAll.addEventListener('click', () => {
+        const icon = document.getElementById('refreshIcon');
+        icon.style.display = 'inline-block';
+        icon.style.animation = 'spin 0.8s linear infinite';
+        
+        callRuby('refresh');
+
+        setTimeout(() => {
+          icon.style.animation = 'none';
+        }, 1200);
+      });
+
+      // Notify SketchUp that HTML page is ready to receive data
+      callRuby('ready');
+
+      // Повторный сигнал на случай, если мост SketchUp CEF инициализировался чуть позже
+      setTimeout(() => {
+        if (!products || products.length === 0) {
+          callRuby('ready');
+        }
+      }, 350);
+
+      // Страховочный таймаут: если данные не поступили за 3.5 сек, убираем бесконечный спиннер
+      setTimeout(() => {
+        if (!products || products.length === 0) {
+          const container = document.getElementById('productsContainer');
+          if (container && container.querySelector('.spinner')) {
+            container.innerHTML = `
+              <div class="empty-state">
+                <p style="font-size: 28px; margin-bottom: 8px;">⏳</p>
+                <p style="font-size: 15px; font-weight: 600;">Загрузка каталога заняла больше времени, чем обычно</p>
+                <p style="font-size: 13px; color: var(--text-muted); margin: 6px 0 16px 0;">Возможно, проверяются обновления через интернет или сеть недоступна.</p>
+                <button class="btn btn-primary" onclick="callRuby('refresh')">🔄 Повторить загрузку</button>
+              </div>
+            `;
+          }
+        }
+      }, 3500);
+    });
+  </script>
+</body>
+</html>
