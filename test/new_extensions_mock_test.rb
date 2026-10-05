@@ -205,5 +205,9 @@ html = File.read(File.join(BASE, 'src', 'dn1sup_ext_manager', 'html', 'index.htm
 assert 'getPluginIcon: tag → 🏷️', html.include?("if (s.includes('tag')) return '🏷️'")
 assert 'getPluginIcon: comp_add_view → 📐', html.include?("if (s.includes('comp_add_view')) return '📐'")
 
+# === 5. Единое меню без глобальных переменных ===
+assert 'Dn1sup.common_menu определен и возвращает меню', defined?(Dn1sup) && Dn1sup.respond_to?(:common_menu) && !Dn1sup.common_menu.nil?
+assert 'глобальные переменные $dn1sup_common_menu и $dn1sup_menu не создаются', !defined?($dn1sup_common_menu) && !defined?($dn1sup_menu)
+
 puts "\n#{$failed.zero? ? 'ALL TESTS PASSED' : "#{$failed} FAILED"}"
 exit($failed.zero? ? 0 : 1)

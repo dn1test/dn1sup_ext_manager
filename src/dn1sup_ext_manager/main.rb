@@ -10,6 +10,13 @@ require 'fileutils'
 Sketchup.require 'dn1sup_ext_manager/dn1sup_updater'
 
 module Dn1sup
+  def self.common_menu
+    @common_menu ||= begin
+      legacy = (defined?($dn1sup_common_menu) && $dn1sup_common_menu) || (defined?($dn1sup_menu) && $dn1sup_menu)
+      legacy || UI.menu('Extensions').add_submenu('DN1SUP')
+    end
+  end
+
   module ExtManager
     ID      = 'dn1sup_ext_manager'
     VERSION = '0.3.0'
@@ -478,14 +485,9 @@ module Dn1sup
     end
 
     unless file_loaded?(__FILE__)
-      # Общее меню DN1SUP — разделяется всеми расширениями DN1SUP. API не умеет
-      # искать существующие подменю по имени (add_submenu всегда создаёт новое),
-      # поэтому первое загрузившееся расширение создаёт меню и кладёт его в
-      # $dn1sup_common_menu (и в $dn1sup_menu — старое соглашение Comp Add View),
-      # а остальные переиспользуют.
-      common = $dn1sup_common_menu || $dn1sup_menu
-      common ||= UI.menu('Extensions').add_submenu('DN1SUP')
-      $dn1sup_common_menu = $dn1sup_menu = common
+      # Общее меню DN1SUP — синглтон в корневом модуле Dn1sup, разделяется всеми
+      # расширениями DN1SUP без глобальных переменных.
+      common = Dn1sup.common_menu
 
       # Пункты расширения — в подменю «Extension Store» внутри DN1SUP
       menu = common.add_submenu('Extension Store')
