@@ -5,16 +5,23 @@
 
 ## [0.4.0] — 2026-10-05
 
-### Единое меню DN1SUP во всех расширениях
-- **Общее меню без дублей**:
-  - Все 5 расширений DN1Sup добавляют свои пункты в единое подменю `DN1SUP` в меню «Extensions».
-  - Соглашение: общее меню инкапсулировано в синглтон-методе корневого модуля `Dn1sup.common_menu` без использования глобальных переменных (с сохранением обратной совместимости для старых плагинов). Первое загрузившееся расширение создаёт подменю, остальные переиспользуют.
-  - Структура: Extensions → DN1SUP → {AutoSelect Tag, Comp Add View, Export PDF 2, Extension Store, Time Project 2}.
-- **DN1Sup AutoSelect Tag (v0.3.0)**: меню перенесено из отдельного верхнеуровневого пункта внутрь общего DN1SUP.
-- **DN1Sup Extension Store (v0.3.0)**: меню перенесено внутрь общего DN1SUP → Extension Store.
-- **DN1Sup Time Project 2 (v2.3.0)**: исправление — пункты меню добавляются при любом порядке загрузки расширений (ранее при загрузке после Comp Add View меню расширения не создавалось).
-- **DN1Sup Component Add View (v1.3.0)**: переход на общее соглашение `$dn1sup_common_menu`.
-- Обновлены `registry.json` и `data/registry.json`, пересобраны пакеты в `packages/`.
+### Единое меню DN1SUP и отказ от глобальных переменных
+- **Единое меню без дублирования**:
+  - Все 5 расширений DN1Sup добавляют свои пункты в единое подменю `Extensions → DN1SUP`.
+  - Структура: `Extensions → DN1SUP → {AutoSelect Tag, Comp Add View, Export PDF 2, Extension Store, Time Project 2}`.
+- **Отказ от глобальных переменных (`$dn1sup_common_menu` / `$dn1sup_menu`)**:
+  - Архитектурное соглашение переведено на чистый паттерн Ruby — синглтон-метод `Dn1sup.common_menu` в корневом пространстве имён `Dn1sup`.
+  - Полное соответствие требованиям Trimble Extension Warehouse и RuboCop SketchUp (нет загрязнения глобальной области видимости `$`).
+  - Сохранена обратная совместимость: если у пользователя уже загружена старая версия одного из плагинов с глобальными переменными, `Dn1sup.common_menu` прозрачно подхватывает существующее меню без создания дубликата.
+- **Обновления в расширениях**:
+  - **DN1Sup AutoSelect Tag (v0.3.0)**: меню перенесено внутрь `DN1SUP → AutoSelect Tag`; флаг создания подменю переведён с глобала `$dn1sup_menu_autoselect_tag` на инстанс-переменную модуля `@menu_autoselect_tag`.
+  - **DN1Sup Extension Store (v0.3.0)**: меню менеджера размещено в `DN1SUP → Extension Store` через `Dn1sup.common_menu`.
+  - **DN1Sup Time Project 2 (v2.3.0)**: переход на `Dn1sup.common_menu`; защита от дублирования пунктов при hot reload изолирована внутри `Dn1sup` без использования `$dn1sup_tp2_menu`.
+  - **DN1Sup Component Add View (v1.3.0)**: переход на `Dn1sup.common_menu` вместо `$dn1sup_common_menu`.
+  - **DN1Sup Export PDF 2**: подменю `Export PDF 2` строится поверх общего `Dn1sup.common_menu`.
+- **Автотесты и сборка**:
+  - В `test/new_extensions_mock_test.rb` добавлены проверки инициализации `Dn1sup.common_menu` и отсутствия `$dn1sup_common_menu` / `$dn1sup_menu` в глобальной области.
+  - Обновлены `registry.json` и `data/registry.json`, пересобраны и синхронизированы все пакеты `.rbz` в директории `packages/`.
 
 ---
 
