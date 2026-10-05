@@ -13,7 +13,7 @@
 | Расширение | Версия | Описание |
 |---|---|---|
 | [`dn1sup_ext_manager`](src/dn1sup_ext_manager) | `0.3.0` | **Extension Store**: каталог расширений по [registry.json](registry.json), установка и обновление с GitHub в один клик |
-| `dn1sup_time_project2` | `2.3.0` | **Time Project 2**: учёт активного рабочего времени над моделью, статистика по дням, часам и дням недели (Vue 3 + Tailwind CSS) |
+| `dn1sup_time_project2` | `2.4.0` | **Time Project 2**: учёт активного рабочего времени, статистика хранится внутри файла модели `.skp` (Vue 3 + Tailwind CSS) |
 | `dn1sup_autoselect_tag` | `0.3.0` | **AutoSelect Tag**: автоматическое назначение тегов `Dimension` и `Label` размерам и выноскам с диалогом настроек |
 | `dn1sup_comp_add_view` | `1.3.0` | **Component Add View**: создание копий компонентов со сдвигом/поворотом по осям Z и X, проекции видов сверху и сбоку |
 
