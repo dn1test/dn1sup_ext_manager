@@ -3,6 +3,17 @@
 Все заметные изменения в расширениях проекта документируются в этом файле с разбивкой по каждому расширению.
 Формат версий соответствует правилам `MAJOR.MINOR.PATCH`.
 
+## [0.6.0] — 2026-10-06
+
+### DN1SUP Create Project (v1.1.0)
+- **Добавление в менеджер установки и каталог Store**:
+  - Расширение включено в реестр [registry.json](registry.json) и кэш `src/dn1sup_ext_manager/data/registry.json`.
+  - Реализована упаковка в `packages/dn1sup_create_project.rbz` через [tools/pack.rb](tools/pack.rb) с обфускацией AES-256 (`tools/protect.rb`).
+  - Добавлена иконка 📁 и карточка расширения в веб-интерфейс каталога [html/index.html](html/index.html).
+  - Расширены автотесты [test/smoke_test.rb](test/smoke_test.rb), [test/new_extensions_mock_test.rb](test/new_extensions_mock_test.rb) и [test/rbz_load_test.rb](test/rbz_load_test.rb).
+
+---
+
 ## [0.5.1] — 2026-10-05
 
 ### Сборка и дистрибуция

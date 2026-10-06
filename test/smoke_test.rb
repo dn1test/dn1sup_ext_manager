@@ -175,9 +175,10 @@ assert 'prompt_pick обрабатывает false без исключений',
 
 # 12. Проверка мгновенного сбора каталога без сети (offline mode)
 offline_products = Dn1sup::ExtManager.collect_products_data(false, check_releases: false)
-assert 'collect_products_data offline возвращает все расширения из реестра', offline_products.size == 4
+assert 'collect_products_data offline возвращает все расширения из реестра', offline_products.size == 5
 assert 'collect_products_data offline содержит id dn1sup_ext_manager', offline_products.any? { |p| p['id'] == 'dn1sup_ext_manager' }
 assert 'collect_products_data offline содержит id dn1sup_comp_add_view', offline_products.any? { |p| p['id'] == 'dn1sup_comp_add_view' }
+assert 'collect_products_data offline содержит id dn1sup_create_project', offline_products.any? { |p| p['id'] == 'dn1sup_create_project' }
 
 puts "\n#{$failed.zero? ? 'ALL TESTS PASSED' : "#{$failed} FAILED"}"
 exit($failed.zero? ? 0 : 1)

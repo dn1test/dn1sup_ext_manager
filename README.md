@@ -13,6 +13,7 @@
 | Расширение | Версия | Описание |
 |---|---|---|
 | [`dn1sup_ext_manager`](src/dn1sup_ext_manager) | `0.3.0` | **Extension Store**: каталог расширений по [registry.json](registry.json), установка и обновление с GitHub в один клик |
+| `dn1sup_create_project` | `1.1.0` | **Create Project**: создание и оформление мебельных проектов, структура папок, YAML-карточки, файлы и генерация артикулов (Vue 3) |
 | `dn1sup_time_project2` | `2.4.0` | **Time Project 2**: учёт активного рабочего времени, статистика хранится внутри файла модели `.skp` (Vue 3 + Tailwind CSS) |
 | `dn1sup_autoselect_tag` | `0.3.0` | **AutoSelect Tag**: автоматическое назначение тегов `Dimension` и `Label` размерам и выноскам с диалогом настроек |
 | `dn1sup_comp_add_view` | `1.3.0` | **Component Add View**: создание копий компонентов со сдвигом/поворотом по осям Z и X, проекции видов сверху и сбоку |
@@ -60,6 +61,7 @@ GitHub Release (тег v*)
 - Исходный код целевых расширений разрабатывается в независимых внешних проектах:
   - `../dn1sup_autoselect_tag`
   - `../dn1sup_comp_add_view`
+  - `../dn1sup_create_project`
   - `../dn1sup_time_project2`
 - Общий модуль обновления: [shared/dn1sup_updater.rb](shared/dn1sup_updater.rb) (автоматически подставляется в каждый `.rbz` при сборке).
 

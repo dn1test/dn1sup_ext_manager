@@ -147,6 +147,7 @@ end
 EXPECTED = {
   'dn1sup_ext_manager'    => ['Dn1sup::ExtManager::VERSION', '0.3.0'],
   'dn1sup_time_project2'  => ['Dn1supTimeProject2::VERSION', '2.4.0'],
+  'dn1sup_create_project' => ['Dn1supCreateProject::VERSION', '1.1.0'],
   'dn1sup_autoselect_tag' => ['Dn1sup::AutoSelectTag::VERSION', '0.3.0'],
   'dn1sup_comp_add_view'  => ['CustomTools::ComponentAddViews', nil]
 }.freeze
@@ -165,7 +166,7 @@ end
 # --- Тесты --------------------------------------------------------------------
 
 packages = Dir.glob(File.expand_path('../packages/*.rbz', __dir__)).sort
-assert 'найдены собранные пакеты', packages.size == 4, packages.map { |p| File.basename(p) }.join(', ')
+assert 'найдены собранные пакеты', packages.size == 5, packages.map { |p| File.basename(p) }.join(', ')
 
 Dir.mktmpdir do |tmp|
   # Фейковые sketchup.rb / extensions.rb — как настоящие, только со стабами выше

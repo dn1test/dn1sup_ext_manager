@@ -190,13 +190,14 @@ else
   puts 'SKIP comp_add_view: внешняя папка не найдена'
 end
 
-# === 3. registry.json содержит оба новых расширения ===
+# === 3. registry.json содержит новые расширения ===
 require 'json'
 reg = JSON.parse(File.read(File.join(BASE, 'registry.json')))
 ids = reg.map { |e| e['id'] }
 assert 'registry содержит dn1sup_autoselect_tag', ids.include?('dn1sup_autoselect_tag')
 assert 'registry содержит dn1sup_comp_add_view', ids.include?('dn1sup_comp_add_view')
-new_entries = reg.select { |e| %w[dn1sup_autoselect_tag dn1sup_comp_add_view].include?(e['id']) }
+assert 'registry содержит dn1sup_create_project', ids.include?('dn1sup_create_project')
+new_entries = reg.select { |e| %w[dn1sup_autoselect_tag dn1sup_comp_add_view dn1sup_create_project].include?(e['id']) }
 assert 'у новых записей есть name/description/asset/version/changelog',
        new_entries.all? { |e| !e['name'].to_s.empty? && !e['description'].to_s.empty? && e['asset'] == "#{e['id']}.rbz" && !e['version'].to_s.empty? && !e['changelog'].to_s.empty? }
 
@@ -204,6 +205,7 @@ assert 'у новых записей есть name/description/asset/version/cha
 html = File.read(File.join(BASE, 'src', 'dn1sup_ext_manager', 'html', 'index.html'))
 assert 'getPluginIcon: tag → 🏷️', html.include?("if (s.includes('tag')) return '🏷️'")
 assert 'getPluginIcon: comp_add_view → 📐', html.include?("if (s.includes('comp_add_view')) return '📐'")
+assert 'getPluginIcon: create_project → 📁', html.include?("if (s.includes('create_project') || s.includes('project')) return '📁'")
 
 # === 5. Единое меню без глобальных переменных ===
 assert 'Dn1sup.common_menu определен и возвращает меню', defined?(Dn1sup) && Dn1sup.respond_to?(:common_menu) && !Dn1sup.common_menu.nil?

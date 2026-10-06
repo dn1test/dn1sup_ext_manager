@@ -70,6 +70,10 @@ SOURCES = {
   'dn1sup_time_project2' => {
     loader: File.join(EXT_BASE, 'dn1sup_time_project2', 'dn1sup_time_project2', 'dn1sup_time_project2.rb'),
     dir:    File.join(EXT_BASE, 'dn1sup_time_project2', 'dn1sup_time_project2', 'dn1sup_time_project2')
+  },
+  'dn1sup_create_project' => {
+    loader: File.join(EXT_BASE, 'dn1sup_create_project', 'dn1sup_create_project', 'dn1sup_create_project.rb'),
+    dir:    File.join(EXT_BASE, 'dn1sup_create_project', 'dn1sup_create_project', 'dn1sup_create_project')
   }
 }.freeze
 

@@ -1,1 +1,5 @@
 .zcode/
+/data/
+/html/
+/main.rb
+/dn1sup_updater.rb

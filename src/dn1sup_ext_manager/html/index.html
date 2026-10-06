@@ -689,6 +689,20 @@
         published_at: "2026-10-04"
       },
       {
+        id: "dn1sup_create_project",
+        name: "DN1SUP Create Project",
+        description: "Создание и оформление мебельных проектов: структура папок, карточка YAML, картинки и документы.",
+        repo: "dn1test/sketchup-dn1sup-extensions",
+        asset: "dn1sup_create_project.rbz",
+        installed_version: null,
+        is_installed: false,
+        latest_version: "v1.1.0",
+        has_update: false,
+        changelog: "- Создание структуры мебельных проектов (бытовые и коммерческие) с шаблонами папок и файлов\n- Карточка проекта YAML с историей изменений и синхронизацией путей\n- Групповое добавление файлов и картинок с превью и распределением по подпапкам\n- Генерация уникальных артикулов с посекундным штампом времени\n- Веб-интерфейс на Vue 3, интеграция в единое меню DN1SUP и панель инструментов",
+        release_url: "https://github.com/dn1test/sketchup-dn1sup-extensions/releases/tag/v1.1.0",
+        published_at: "2026-10-06"
+      },
+      {
         id: "dn1sup_ext_manager",
         name: "DN1Sup Extension Store",
         description: "Каталог, установка и обновление расширений с GitHub по JSON-реестру.",
@@ -750,6 +764,7 @@
     // Helper for plugin icon
     function getPluginIcon(id) {
       const s = String(id || '').toLowerCase();
+      if (s.includes('create_project') || s.includes('project')) return '📁';
       if (s.includes('tag')) return '🏷️';
       if (s.includes('comp_add_view')) return '📐';
       if (s.includes('time') || s.includes('clock') || s.includes('timer')) return '⏱️';

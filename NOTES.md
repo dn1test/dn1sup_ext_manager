@@ -26,6 +26,7 @@
    - Остальные целевые расширения разрабатываются в отдельных внешних каталогах:
      - `../dn1sup_autoselect_tag`
      - `../dn1sup_comp_add_view`
+     - `../dn1sup_create_project`
      - `../dn1sup_time_project2`
    - Сборщик [tools/pack.rb](tools/pack.rb) упаковывает `.rbz` напрямую из рабочих папок, фильтрует dev-файлы (`test`, `archive`, `.git`, `node_modules`, `frontend`), считывает актуальные версии из лоадеров и синхронизирует [registry.json](registry.json).
 
@@ -56,7 +57,7 @@
   - Полный переход с `dn1code_` / `dn1c_` на `dn1sup_` во всех пространствах имён, константах, идентификаторах, меню и путях.
 - **Очистка состава расширений (v0.3.0)**:
   - Демо-плагины (`cube_tools`, `scene_tools`) удалены из репозитория, тестов и реестра.
-  - В каталоге зафиксированы 4 целевых расширения: `dn1sup_ext_manager`, `dn1sup_time_project2`, `dn1sup_autoselect_tag`, `dn1sup_comp_add_view`.
+  - В каталоге зафиксированы 5 целевых расширений: `dn1sup_ext_manager`, `dn1sup_create_project`, `dn1sup_time_project2`, `dn1sup_autoselect_tag`, `dn1sup_comp_add_view`.
 - **Безопасность UI и мостов (v0.2.1)**:
   - Устранена потенциальная инъекция в `execute_script` (все параметры сериализуются через `JSON.generate`).
   - Убраны `onclick` в HTML-шаблоне, переведено на делегированные слушатели `data-action` / `data-id`.
