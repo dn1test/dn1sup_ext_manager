@@ -19,14 +19,17 @@ module Dn1sup
 
   module ExtManager
     ID      = 'dn1sup_ext_manager'
-    VERSION = '0.3.1'
+    VERSION = '0.4.1'
     REPO    = 'dn1test/dn1sup_ext_manager'
     ASSET   = "#{ID}.rbz"
     PAGE_URL     = "https://github.com/#{REPO}/releases"
     REGISTRY_URL = "https://raw.githubusercontent.com/#{REPO}/main/registry.json"
 
-    PLUGIN_DIR = File.dirname(__FILE__).freeze
-    HTML_PATH  = File.join(PLUGIN_DIR, 'html', 'index.html').freeze
+    PLUGIN_DIR   = File.dirname(__FILE__).freeze
+    HTML_PATH    = File.join(PLUGIN_DIR, 'html', 'index.html').freeze
+    ICON_DIR     = File.join(PLUGIN_DIR, 'icons').freeze
+    TOOLBAR_NAME = 'DN1Sup Extension Store'
+    CMD_TOOLTIP  = 'DN1Sup Extension Store — каталог, установка и обновление расширений'
 
     @dialog = nil
     @release_cache = {}
@@ -75,13 +78,9 @@ module Dn1sup
       plugins_dir = Sketchup.find_support_file('Plugins')
       return true unless plugins_dir && File.directory?(plugins_dir)
 
-      # Проверка как основного имени, так и альтернативных лоадеров
-      candidates = [
-        "#{id}.rb",
-        (id == 'dn1sup_comp_add_view' ? 'su_component_add_view.rb' : nil)
-      ].compact
-
-      candidates.any? { |f| File.file?(File.join(plugins_dir, f)) }
+      # Проверка лоадера по каноническому имени <id>.rb
+      # (нестандартные имена лоадеров — ответственность репозитория расширения)
+      File.file?(File.join(plugins_dir, "#{id}.rb"))
     rescue StandardError
       false
     end
@@ -104,7 +103,6 @@ module Dn1sup
 
         unless ext
           search_keys = [name, id].compact
-          search_keys << 'ComponentAddViews' if id == 'dn1sup_comp_add_view'
 
           Sketchup.extensions.each do |candidate|
             c_name = candidate.respond_to?(:name) ? candidate.name.to_s : ''
@@ -129,16 +127,66 @@ module Dn1sup
       nil
     end
 
-    # Получение последнего релиза с кэшированием по имени репозитория
+    # Получение последнего релиза с кэшированием по имени репозитория.
+    # Неудачный запрос ({} — сеть недоступна, лимиты) НЕ кэшируется: иначе
+    # одна сетевая ошибка обнуляла версии и changelog'и до конца сессии.
     def latest_release(repo, force = false)
       repo_str = repo.to_s
       if force || !@release_cache.key?(repo_str)
-        @release_cache[repo_str] = Dn1sup::Updater.latest_release(repo_str)
+        rel = Dn1sup::Updater.latest_release(repo_str)
+        @release_cache[repo_str] = rel if rel.is_a?(Hash) && rel.key?('tag_name')
       end
       @release_cache[repo_str] || {}
     rescue StandardError => e
       Dn1sup::Updater.log_error(e)
       {}
+    end
+
+    # ---- Снапшот релизов (офлайн-фоллбэк для версий и changelog'ов) -------
+
+    # Путь к снапшоту последних успешных релизов (в temp-каталоге SketchUp).
+    def snapshot_path
+      dir = defined?(Sketchup) && Sketchup.respond_to?(:temp_dir) ? Sketchup.temp_dir : Dir.tmpdir
+      File.join(dir.to_s, 'dn1sup_ext_releases.json')
+    rescue StandardError
+      nil
+    end
+
+    # Сохраняет компактный снапшот успешных релизов (только поля, нужные
+    # каталогу для отображения; установка всегда делает свежий запрос).
+    def save_release_snapshot
+      path = snapshot_path
+      return unless path
+
+      data = {}
+      @release_cache.each do |repo, rel|
+        next unless rel.is_a?(Hash) && rel.key?('tag_name')
+
+        data[repo] = {
+          'tag_name'     => rel['tag_name'],
+          'name'         => rel['name'],
+          'body'         => rel['body'],
+          'published_at' => rel['published_at'],
+          'html_url'     => rel['html_url'],
+          'assets'       => (rel['assets'] || []).map do |a|
+            { 'name' => a['name'], 'browser_download_url' => a['browser_download_url'] }
+          end
+        }
+      end
+      File.write(path, JSON.generate(data))
+    rescue StandardError => e
+      Dn1sup::Updater.log_error(e)
+    end
+
+    # Загружает снапшот в кэш (только если кэш пуст — не затирая свежие данные).
+    def load_release_snapshot
+      path = snapshot_path
+      return unless path && File.file?(path) && @release_cache.empty?
+
+      data = JSON.parse(File.read(path))
+      @release_cache = data if data.is_a?(Hash)
+    rescue StandardError => e
+      Dn1sup::Updater.log_error(e)
     end
     # Поиск .rbz ассета в релизе репозитория
     def find_rbz_asset(release, preferred_name = nil)
@@ -340,7 +388,10 @@ module Dn1sup
     def send_products_to_dialog(force: false)
       return unless @dialog
 
-      # 1. Мгновенная отрисовка из локального кэша и реестра
+      # 1. Мгновенная отрисовка из локального кэша и реестра.
+      #    Если кэш пуст (новая сессия) — подгружаем снапшот последних
+      #    успешных релизов, чтобы версии и changelog'и были видны офлайн.
+      load_release_snapshot if @release_cache.empty?
       local_products = collect_products_data(false, check_releases: false)
       if local_products.is_a?(Array)
         @dialog.execute_script("window.renderProducts(#{JSON.generate(local_products)});")
@@ -351,6 +402,14 @@ module Dn1sup
       repos = entries.map { |e| e['repo'].to_s }.uniq.reject(&:empty?)
       return if repos.empty?
 
+      fetch_and_render(repos, force, attempts_left: 1)
+    rescue StandardError => e
+      Dn1sup::Updater.log_error(e)
+    end
+
+    # Фоновая загрузка релизов и перерисовка каталога. Однократный автоповтор,
+    # если сеть была недоступна в момент первого обхода.
+    def fetch_and_render(repos, force, attempts_left: 0)
       Dn1sup::Updater.defer_async(
         lambda do
           result = {}
@@ -365,10 +424,16 @@ module Dn1sup
 
           if fetched_releases.is_a?(Hash) && fetched_releases.any?
             @release_cache.merge!(fetched_releases)
+            save_release_snapshot
             updated_products = collect_products_data(false, check_releases: false, releases: @release_cache)
             if updated_products.is_a?(Array) && updated_products.any?
               @dialog.execute_script("window.renderProducts(#{JSON.generate(updated_products)});")
             end
+          end
+
+          missing = repos.size - fetched_releases.to_h.size
+          if attempts_left > 0 && missing > 0
+            fetch_and_render(repos - fetched_releases.to_h.keys, force, attempts_left: attempts_left - 1)
           end
         end
       )
@@ -507,6 +572,57 @@ module Dn1sup
       nil
     end
 
+    # Команда «Каталог расширений» — общая для меню и тулбара.
+    def catalog_command
+      cmd = UI::Command.new('Каталог расширений') { open_store }
+      cmd.menu_text       = 'Каталог расширений…'
+      cmd.tooltip         = CMD_TOOLTIP
+      cmd.status_bar_text = 'Открыть каталог расширений DN1Sup'
+      cmd.small_icon      = small_icon_path
+      cmd.large_icon      = large_icon_path
+      cmd
+    rescue StandardError => e
+      Dn1sup::Updater.log_error(e)
+      nil
+    end
+
+    # SVG-иконка поддерживается тулбарами начиная с SketchUp 2020.1 (v20);
+    # на старых версиях используем PNG 16/24.
+    def svg_icons_supported?
+      Sketchup.respond_to?(:version) && Sketchup.version.to_i >= 20
+    end
+
+    def small_icon_path
+      svg = File.join(ICON_DIR, 'store.svg')
+      return svg if svg_icons_supported? && File.file?(svg)
+
+      File.join(ICON_DIR, 'store_16.png')
+    end
+
+    def large_icon_path
+      svg = File.join(ICON_DIR, 'store.svg')
+      return svg if svg_icons_supported? && File.file?(svg)
+
+      File.join(ICON_DIR, 'store_24.png')
+    end
+
+    # Панель инструментов с кнопкой вызова каталога. Тулбар нельзя удалить
+    # через API, поэтому кнопка создаётся один раз: после перезагрузки кода
+    # UI::Toolbar.new возвращает существующую панель, а дубликаты отсекаются
+    # проверкой tooltip.
+    def setup_toolbar
+      toolbar = UI::Toolbar.new(TOOLBAR_NAME)
+      return if toolbar.any? { |c| c.respond_to?(:tooltip) && c.tooltip == CMD_TOOLTIP }
+
+      cmd = catalog_command
+      return unless cmd
+
+      toolbar.add_item(cmd)
+      toolbar.restore
+    rescue StandardError => e
+      Dn1sup::Updater.log_error(e)
+    end
+
     unless file_loaded?(__FILE__)
       # Общее меню DN1Sup — синглтон в корневом модуле Dn1sup, разделяется всеми
       # расширениями DN1Sup без глобальных переменных.
@@ -514,12 +630,15 @@ module Dn1sup
 
       # Пункты расширения — в подменю «Extension Store» внутри DN1Sup
       menu = common.add_submenu('Extension Store')
-      menu.add_item('Каталог расширений…') { open_store }
+      menu.add_item(catalog_command)
       menu.add_item('Проверить обновления менеджера') do
         Dn1sup::Updater.check!({ id: ID, repo: REPO, version: VERSION, asset: ASSET, force: true, async: true })
       end
       menu.add_separator
       menu.add_item('О реестре') { open_registry_repo }
+
+      # Кнопка с иконкой на панели инструментов
+      setup_toolbar
 
       # Фоновая проверка обновлений менеджера при запуске (сеть в потоке,
       # результат — ненавязчивое уведомление, без модальных диалогов)

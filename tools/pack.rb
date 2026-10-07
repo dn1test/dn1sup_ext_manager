@@ -1,19 +1,15 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# tools/pack.rb — сборка .rbz-архивов для каждого расширения.
+# tools/pack.rb — сборка .rbz-архива Extension Store.
 #
-#   ruby tools/pack.rb                  # собрать все расширения из registry.json
-#   ruby tools/pack.rb dn1sup_time_project2 # собрать одно
+#   ruby tools/pack.rb                # собрать dn1sup_ext_manager
 #
-# Исходники расширений:
-# - dn1sup_ext_manager: хранится локально в репозитории (src/)
-# - dn1sup_autoselect_tag, dn1sup_comp_add_view, dn1sup_time_project2:
-#   берутся напрямую из внешних рабочих директорий (../dn1sup_*)
-#   и НЕ хранятся внутри репозитория dn1sup_extensions.
+# Исходники — в src/dn1sup_ext_manager. Остальные расширения DN1Sup
+# собираются и выпускаются в собственных репозиториях; здесь хранится
+# только реестр (id/name/repo) для каталога, установки и обновлений.
 #
 # В корень .rbz кладётся loader-файл <id>.rb, а папка <id>/ копируется целиком.
-# Версии автоматически считываются из лоадеров внешних проектов и обновляются в registry.json.
 # Общие файлы из shared/ (dn1sup_updater.rb) синхронизируются в архив автоматически.
 
 require 'json'
@@ -106,14 +102,7 @@ def pack(id, source, shared_updater, reg_path)
 
     # 1. Лоадер
     stage_loader = File.join(stage, target_loader_name)
-    if source[:target_loader_name] && source[:target_loader_name] != File.basename(src_loader)
-      content = File.read(src_loader)
-      content = content.gsub(/File\.join\(['"][^'"]+['"],\s*['"]main['"]\)/, "File.join('#{target_dir_name}', 'main')")
-      content = content.gsub(/'ComponentAddViews'/, "'DN1Sup Component Add View'")
-      File.write(stage_loader, content)
-    else
-      FileUtils.cp(src_loader, stage_loader)
-    end
+    FileUtils.cp(src_loader, stage_loader)
 
     # 2. Папка плагина
     stage_plugin_dir = File.join(stage, target_dir_name)

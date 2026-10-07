@@ -77,6 +77,25 @@ module UI
       def add_separator(*); self; end
     end.new
   end
+
+  class Command
+    def initialize(*); end
+
+    def menu_text=(*);       self; end
+    def tooltip=(*);         self; end
+    def status_bar_text=(*); self; end
+    def small_icon=(*);      self; end
+    def large_icon=(*);      self; end
+    def validation_proc=(*); self; end
+  end
+
+  class Toolbar
+    def initialize(*); end
+
+    def any?(*); false; end
+    def add_item(*); $dialog_log << 'TOOLBAR_ITEM'; self; end
+    def restore(*);  $dialog_log << 'TOOLBAR_RESTORE'; self; end
+  end
 end
 
 IDYES = 2
@@ -174,6 +193,9 @@ assert 'check! возвращает nil для актуальной версии
 require_relative '../src/dn1sup_ext_manager/main'
 Sketchup.write_default('DN1Sup ExtManager', 'installed_dummy', '1.5.0')
 assert 'ExtManager::installed_version fallback read_default', Dn1sup::ExtManager.installed_version('dummy') == '1.5.0'
+
+assert 'тулбар создан с кнопкой каталога', $dialog_log.include?('TOOLBAR_ITEM')
+assert 'тулбар показан (restore)', $dialog_log.include?('TOOLBAR_RESTORE')
 
 # 11. Проверка prompt_pick при нажатии Cancel (UI.inputbox возвращает false)
 assert 'prompt_pick обрабатывает false без исключений', Dn1sup::ExtManager.prompt_pick([{ 'name' => 'Test', 'installed_version' => nil }]).nil?

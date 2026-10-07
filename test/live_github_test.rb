@@ -29,6 +29,25 @@ module UI
   def messagebox(*); 1; end
   def start_timer(*); end
   def menu(*); Class.new { def add_submenu(*); self; end; def add_item(*); self; end; def add_separator(*); self; end }.new; end
+
+  class Command
+    def initialize(*); end
+
+    def menu_text=(*);       self; end
+    def tooltip=(*);         self; end
+    def status_bar_text=(*); self; end
+    def small_icon=(*);      self; end
+    def large_icon=(*);      self; end
+    def validation_proc=(*); self; end
+  end
+
+  class Toolbar
+    def initialize(*); end
+
+    def any?(*); false; end
+    def add_item(*); self; end
+    def restore(*);  self; end
+  end
 end
 def file_loaded?(_); false; end
 def file_loaded(_); true; end
