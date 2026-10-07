@@ -3,3 +3,5 @@
 /html/
 /main.rb
 /dn1sup_updater.rb
+frontend/node_modules/
+.orca-preparing/

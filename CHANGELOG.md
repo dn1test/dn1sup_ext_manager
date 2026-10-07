@@ -7,6 +7,21 @@
 репозиториях (`dn1test/dn1sup_*`); этот репозиторий хранит только реестр
 каталога (`registry.json`: id/name/repo), необходимый для установки и обновлений.
 
+## [0.5.0] — 2026-10-07
+
+### DN1Sup Extension Store (v0.5.0)
+- **Интерфейс каталога переписан на Vue 3**: исходники — в `frontend/`
+  (Vite + Tailwind + `vite-plugin-singlefile`), сборка одним файлом
+  (`npm run build`) кладётся в `src/dn1sup_ext_manager/html/index.html`.
+- **Единый мост Ruby ↔ JS**: один экшен-колбэк `call_ruby` (имя команды +
+  JSON-параметр) вместо набора отдельных колбэков; состояние и результаты
+  операций пушатся в UI через `window.pushState` / `window.pushResult`.
+- **Перехват ошибок интерфейса**: JS error hook (`error` /
+  `unhandledrejection`) отправляет ошибки в журнал Ruby (`log_js_error`) —
+  ошибки Vue/JS видны в `dn1sup_updater.log`.
+- **Mock-режим фронтенда**: `npm run dev` в браузере работает без SketchUp
+  (мок-данные каталога и операций).
+
 ## [0.4.1] — 2026-10-07
 
 ### DN1Sup Extension Store (v0.4.1)
@@ -81,6 +96,7 @@
 - Первый релиз менеджера расширений: установка и обновление .rbz напрямую с GitHub Releases.
 - Интерактивный HTML-интерфейс каталога.
 
+[0.5.0]: https://github.com/dn1test/dn1sup_ext_manager/releases
 [0.4.1]: https://github.com/dn1test/dn1sup_ext_manager/releases
 [0.4.0]: https://github.com/dn1test/dn1sup_ext_manager/releases
 [0.3.3]: https://github.com/dn1test/sketchup-dn1sup-extensions/releases/tag/v0.3.3

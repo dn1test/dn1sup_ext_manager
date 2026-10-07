@@ -19,7 +19,7 @@ module Dn1sup
 
   module ExtManager
     ID      = 'dn1sup_ext_manager'
-    VERSION = '0.4.1'
+    VERSION = '0.5.0'
     REPO    = 'dn1test/dn1sup_ext_manager'
     ASSET   = "#{ID}.rbz"
     PAGE_URL     = "https://github.com/#{REPO}/releases"
@@ -378,38 +378,40 @@ module Dn1sup
     end
 
     # ---- UI & HtmlDialog --------------------------------------------------
+    #
+    # Обмен Ruby ↔ JS (единый паттерн с dn1sup_create_project /
+    # dn1sup_save_settings): один экшен-колбэк 'call_ruby' (name + JSON-параметр)
+    # и пуш-функции window.pushState / window.pushResult.
 
-    # Отправка актуальных данных о продуктах в HTML диалог.
+    # Отправка состояния каталога в диалог.
     # Этап 1: МГНОВЕННО отдаём локальные данные (реестр + локально установленные плагины).
     #         Каталог отображается сразу, не дожидаясь ответа от GitHub API.
     #         Выполняется синхронно на главном потоке (безопасно для вызовов SketchUp API).
     # Этап 2: В фоновом потоке запрашиваем последние релизы с GitHub (только сеть, БЕЗ вызовов API SketchUp).
     #         По готовности обновляем данные на главном потоке.
     def send_products_to_dialog(force: false)
-      return unless @dialog
+      dlg = @dialog
+      return unless dlg
 
       # 1. Мгновенная отрисовка из локального кэша и реестра.
       #    Если кэш пуст (новая сессия) — подгружаем снапшот последних
       #    успешных релизов, чтобы версии и changelog'и были видны офлайн.
       load_release_snapshot if @release_cache.empty?
-      local_products = collect_products_data(false, check_releases: false)
-      if local_products.is_a?(Array)
-        @dialog.execute_script("window.renderProducts(#{JSON.generate(local_products)});")
-      end
+      push_state(dlg, collect_products_data(false, check_releases: false))
 
       # 2. Фоновое обновление версий через сеть (только сетевые запросы, без SketchUp API в потоке)
       entries = load_registry
       repos = entries.map { |e| e['repo'].to_s }.uniq.reject(&:empty?)
       return if repos.empty?
 
-      fetch_and_render(repos, force, attempts_left: 1)
+      fetch_and_render(dlg, repos, force, attempts_left: 1)
     rescue StandardError => e
       Dn1sup::Updater.log_error(e)
     end
 
     # Фоновая загрузка релизов и перерисовка каталога. Однократный автоповтор,
     # если сеть была недоступна в момент первого обхода.
-    def fetch_and_render(repos, force, attempts_left: 0)
+    def fetch_and_render(dlg, repos, force, attempts_left: 0)
       Dn1sup::Updater.defer_async(
         lambda do
           result = {}
@@ -425,15 +427,12 @@ module Dn1sup
           if fetched_releases.is_a?(Hash) && fetched_releases.any?
             @release_cache.merge!(fetched_releases)
             save_release_snapshot
-            updated_products = collect_products_data(false, check_releases: false, releases: @release_cache)
-            if updated_products.is_a?(Array) && updated_products.any?
-              @dialog.execute_script("window.renderProducts(#{JSON.generate(updated_products)});")
-            end
+            push_state(dlg, collect_products_data(false, check_releases: false, releases: @release_cache))
           end
 
           missing = repos.size - fetched_releases.to_h.size
           if attempts_left > 0 && missing > 0
-            fetch_and_render(repos - fetched_releases.to_h.keys, force, attempts_left: attempts_left - 1)
+            fetch_and_render(dlg, repos - fetched_releases.to_h.keys, force, attempts_left: attempts_left - 1)
           end
         end
       )
@@ -449,13 +448,38 @@ module Dn1sup
       id.to_s
     end
 
-    # Результат операции в диалог. Все строки — через JSON.generate,
-    # никакого interpolate в JS-литералы.
-    def notify_action_result(id, action, res)
-      return unless @dialog && @dialog.visible?
+    # Пуш состояния каталога в диалог. products — собранный список карточек
+    # (nil → пустой список, UI покажет empty-state).
+    def push_state(dlg, products)
+      return unless dlg
 
-      script = "window.handleActionResult(#{JSON.generate(id.to_s)}, #{JSON.generate(action)}, #{JSON.generate(res)});"
-      @dialog.execute_script(script)
+      payload = {
+        'version'  => VERSION,
+        'products' => products.is_a?(Array) ? products : []
+      }
+      dlg.execute_script("window.pushState(#{JSON.generate(payload)});")
+    rescue StandardError => e
+      Dn1sup::Updater.log_error(e)
+    end
+
+    # Пуш результата операции в диалог. Все строки — через JSON.generate,
+    # никакого interpolate в JS-литералы.
+    def push_result(dlg, kind, payload)
+      return unless dlg
+
+      dlg.execute_script("window.pushResult(#{JSON.generate(kind)}, #{JSON.generate(payload || {})});")
+    rescue StandardError => e
+      Dn1sup::Updater.log_error(e)
+    end
+
+    # Результат операции install/update/uninstall в диалог.
+    def notify_action_result(id, action, res)
+      push_result(@dialog, 'action_result',
+                  'id'      => id.to_s,
+                  'action'  => action.to_s,
+                  'ok'      => !!(res && res['ok']),
+                  'message' => res && res['message'],
+                  'error'   => res && res['error'])
     end
 
     # Открытие HTML диалога каталога расширений
@@ -484,50 +508,119 @@ module Dn1sup
       )
 
       @dialog.set_file(HTML_PATH)
-
-      # Callback: готовность интерфейса к приёму данных
-      @dialog.add_action_callback('ready') do |_context|
-        send_products_to_dialog(force: false)
-      end
-
-      # Callback: принудительное обновление списка и проверка версий
-      @dialog.add_action_callback('refresh') do |_context|
-        send_products_to_dialog(force: true)
-      end
-
-      # Callback: установка
-      @dialog.add_action_callback('install') do |_context, id|
-        res = perform_install(id)
-        notify_action_result(id, 'install', res)
-        send_products_to_dialog(force: false)
-      end
-
-      # Callback: обновление
-      @dialog.add_action_callback('update') do |_context, id|
-        res = perform_update(id)
-        notify_action_result(id, 'update', res)
-        send_products_to_dialog(force: false)
-      end
-
-      # Callback: подтверждение удаления через нативный диалог SketchUp
-      # (window.confirm в HtmlDialog на части сборок подавлен).
-      @dialog.add_action_callback('confirm_uninstall') do |_context, id|
-        msg = "Вы действительно хотите удалить расширение «#{product_name(id)}» из SketchUp?"
-        yes = defined?(UI) && UI.messagebox(msg, MB_YESNO) == IDYES
-        if @dialog && @dialog.visible?
-          @dialog.execute_script("window.confirmResult(#{JSON.generate(id.to_s)}, #{!!yes});")
-        end
-      end
-
-      # Callback: удаление
-      @dialog.add_action_callback('uninstall') do |_context, id|
-        res = perform_uninstall(id)
-        notify_action_result(id, 'uninstall', res)
-        send_products_to_dialog(force: false)
-      end
-
+      register_callbacks(@dialog)
       @dialog.show
     end
+
+    def register_callbacks(dlg)
+      dlg.add_action_callback('call_ruby') do |_context, name, param|
+        dispatch(dlg, name.to_s, param.to_s)
+      end
+    end
+
+    # Диспетчер команд интерфейса (единый колбэк 'call_ruby').
+    # param — JSON { id: '...' } для действий над карточками.
+    def dispatch(dlg, name, param)
+      case name
+      when 'ready', 'get_state'
+        # Хук ошибок JS инжектится на каждый запрос состояния: идемпотентен
+        # (флаг в window), а первый get_state приходит сразу после загрузки
+        # страницы — до монтирования Vue.
+        inject_error_hook(dlg)
+        send_products_to_dialog(force: false)
+      when 'refresh'
+        send_products_to_dialog(force: true)
+      when 'install'
+        id = parse_json(param)['id']
+        notify_action_result(id, 'install', perform_install(id))
+        send_products_to_dialog(force: false)
+      when 'update'
+        id = parse_json(param)['id']
+        notify_action_result(id, 'update', perform_update(id))
+        send_products_to_dialog(force: false)
+      when 'confirm_uninstall'
+        # Подтверждение удаления через нативный диалог SketchUp
+        # (window.confirm в HtmlDialog на части сборок подавлен).
+        id = parse_json(param)['id']
+        msg = "Вы действительно хотите удалить расширение «#{product_name(id)}» из SketchUp?"
+        yes = defined?(UI) && UI.messagebox(msg, MB_YESNO) == IDYES
+        push_result(dlg, 'confirm_uninstall', 'id' => id.to_s, 'ok' => !!yes)
+      when 'uninstall'
+        id = parse_json(param)['id']
+        notify_action_result(id, 'uninstall', perform_uninstall(id))
+        send_products_to_dialog(force: false)
+      when 'log_js_error'
+        log_js_error(param)
+      else
+        Dn1sup::Updater.log_error(RuntimeError.new("Неизвестная команда диалога: #{name}"))
+      end
+    rescue StandardError => e
+      Dn1sup::Updater.log_error(e)
+      push_result(dlg, 'error', 'message' => "#{e.class}: #{e.message}")
+    end
+
+    # Перехват ошибок интерфейса (window error / unhandledrejection) → Ruby
+    # (log_js_error). Инжектится со стороны Ruby при 'ready' — без пересборки
+    # фронтенда; повторная инжекция безопасна (флаг в window).
+    JS_ERROR_HOOK = <<~'JS'.freeze
+      (function () {
+        if (window.__dn1supErrorHook) { return; }
+        window.__dn1supErrorHook = true;
+        function report(payload) {
+          try {
+            var bridge = (typeof sketchup !== 'undefined' && sketchup) || window.sketchup;
+            if (bridge && typeof bridge.call_ruby === 'function') {
+              bridge.call_ruby('log_js_error', JSON.stringify(payload));
+            }
+          } catch (e) { /* журнал не должен ломать интерфейс */ }
+        }
+        window.addEventListener('error', function (event) {
+          var err = event && event.error;
+          report({
+            message: err && err.message ? String(err.message) : String((event && event.message) || 'JS error'),
+            source: String((event && event.filename) || ''),
+            lineno: (event && event.lineno) || 0,
+            stack: err && err.stack ? String(err.stack) : ''
+          });
+        });
+        window.addEventListener('unhandledrejection', function (event) {
+          var reason = event && event.reason;
+          report({
+            message: 'Unhandled rejection: ' + (reason && reason.message ? String(reason.message) : String(reason)),
+            source: '',
+            lineno: 0,
+            stack: reason && reason.stack ? String(reason.stack) : ''
+          });
+        });
+      })();
+    JS
+
+    def inject_error_hook(dlg)
+      dlg.execute_script(JS_ERROR_HOOK)
+    rescue StandardError => e
+      Dn1sup::Updater.log_error(e)
+    end
+
+    # Ошибки интерфейса (Vue/JS) → журнал. param — JSON {message, source,
+    # lineno, stack}.
+    def log_js_error(param)
+      data = parse_json(param)
+      message = "JS: #{data['message']}"
+      source = [data['source'].to_s, data['lineno'].to_s].reject(&:empty?).join(':')
+      message += " (#{source})" unless source.empty?
+      stack = data['stack'].to_s
+      message += "\n#{stack.lines.first(5).map(&:strip).join("\n")}" unless stack.empty?
+      Dn1sup::Updater.log_error(RuntimeError.new(message))
+    rescue StandardError
+      nil
+    end
+
+    def parse_json(text)
+      JSON.parse(text.to_s)
+    rescue JSON::ParserError
+      {}
+    end
+
 
     # Показывает выпадающий список (fallback / CLI / тесты).
     def prompt_pick(entries)

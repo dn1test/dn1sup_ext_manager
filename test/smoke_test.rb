@@ -208,5 +208,63 @@ assert 'collect_products_data offline содержит id dn1sup_comp_add_view',
 assert 'collect_products_data offline содержит id dn1sup_create_project', offline_products.any? { |p| p['id'] == 'dn1sup_create_project' }
 assert 'collect_products_data offline содержит id dn1sup_save_settings', offline_products.any? { |p| p['id'] == 'dn1sup_save_settings' }
 
+# 13. Протокол диалога: dispatch (единый колбэк call_ruby -> pushState/pushResult)
+class FakeStoreDialog
+  attr_reader :scripts
+
+  def initialize
+    @scripts = []
+  end
+
+  def add_action_callback(*); true;   end
+  def visible?;               true;   end
+  def execute_script(s);      @scripts << s; end
+end
+
+store_dlg = FakeStoreDialog.new
+Dn1sup::ExtManager.instance_variable_set(:@dialog, store_dlg)
+
+# defer_async синхронно: start_timer вызывает блок сразу (repeat=false в SketchUp
+# — однократный вызов; здесь повторный вызов не нужен, т.к. работа синхронна)
+orig_start_timer = UI.method(:start_timer)
+UI.define_singleton_method(:start_timer) { |_interval, _repeat = false, &blk| blk&.call(:timer) }
+UI.define_singleton_method(:stop_timer)  { |_timer| true }
+
+begin
+  # Предзаполняем кэш релизов: pushState уйдёт офлайн, без сетевых запросов
+  entries = Dn1sup::ExtManager.load_registry
+  Dn1sup::ExtManager.instance_variable_set(
+    :@release_cache,
+    entries.each_with_object({}) { |e, h| h[e['repo'].to_s] = { 'tag_name' => 'v9.9.9' } }
+  )
+
+  store_dlg.scripts.clear
+  Dn1sup::ExtManager.dispatch(store_dlg, 'ready', '')
+  pushed = store_dlg.scripts.grep(/\Awindow\.pushState\(/).last
+  assert 'dispatch ready -> pushState', !!pushed, pushed.to_s[0, 120]
+  assert 'pushState содержит version', pushed.to_s.include?('"version":')
+  assert 'pushState содержит products', pushed.to_s.include?('"products":[')
+  assert 'pushState содержит все расширения реестра', pushed.to_s.include?('"dn1sup_ext_manager"')
+
+  store_dlg.scripts.clear
+  Dn1sup::ExtManager.dispatch(store_dlg, 'install', JSON.generate('id' => 'no_such_ext'))
+  res_script = store_dlg.scripts.grep(/window\.pushResult\(/).last
+  assert 'dispatch install неизвестного id -> pushResult ok:false', !!res_script && res_script.include?('false'), res_script.to_s[0, 160]
+
+  store_dlg.scripts.clear
+  Dn1sup::ExtManager.dispatch(store_dlg, 'confirm_uninstall', JSON.generate('id' => 'no_such_ext'))
+  conf_script = store_dlg.scripts.grep(/window\.pushResult\(/).last
+  assert 'dispatch confirm_uninstall -> pushResult(kind, payload)', !!conf_script && conf_script.include?('confirm_uninstall'), conf_script.to_s[0, 160]
+
+  before = $dialog_log.size
+  Dn1sup::ExtManager.dispatch(store_dlg, 'неизвестная_команда', '')
+  assert 'dispatch неизвестная команда не роняет код', $dialog_log.size >= before
+ensure
+  UI.define_singleton_method(:start_timer, orig_start_timer)
+  UI.singleton_class.send(:remove_method, :stop_timer) rescue nil
+  Dn1sup::ExtManager.instance_variable_set(:@dialog, nil)
+  Dn1sup::ExtManager.instance_variable_set(:@release_cache, {})
+end
+
 puts "\n#{$failed.zero? ? 'ALL TESTS PASSED' : "#{$failed} FAILED"}"
 exit($failed.zero? ? 0 : 1)

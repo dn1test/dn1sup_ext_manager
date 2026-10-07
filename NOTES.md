@@ -29,6 +29,16 @@
 6. **Внешние репозитории расширений**:
    - Исходники других расширений DN1Sup хранятся и собираются в их собственных
      репозиториях (`dn1test/dn1sup_*`); здесь ведётся только реестр каталога.
+7. **Интерфейс на Vue 3 (v0.5.0)**:
+   - Исходники UI — в `frontend/` (Vue 3 + Vite + Tailwind, `vite-plugin-singlefile`);
+     сборка `npm run build` кладёт единый HTML-бандл в `src/dn1sup_ext_manager/html/index.html`
+     (`emptyOutDir: false`, dev-исключение `frontend/` в pack.rb).
+   - Мост Ruby ↔ JS: один экшен-колбэк `call_ruby` (имя команды + JSON-параметр),
+     диспетчер `ExtManager.dispatch`; Ruby пушит в UI `window.pushState` /
+     `window.pushResult` — единый паттерн с dn1sup_create_project / dn1sup_save_settings.
+   - JS error hook (error/unhandledrejection → `log_js_error`) инжектится со
+     стороны Ruby при `ready` — без пересборки фронтенда.
+   - Вне SketchUp (`npm run dev` в браузере) работает mock-режим (`mocks.js`).
 
 ---
 
