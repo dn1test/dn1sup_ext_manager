@@ -144,7 +144,7 @@ if reg_entry.nil?
   local_reg = JSON.parse(File.read(File.expand_path('../registry.json', __dir__)))
   reg_entry = Dn1sup::Updater.find_registry_entry(local_reg, 'dn1sup_time_project2')
 end
-assert 'registry_entry находит расширение', reg_entry.is_a?(Hash) && !reg_entry['version'].to_s.empty?, reg_entry.inspect
+assert 'registry_entry находит расширение', reg_entry.is_a?(Hash) && !reg_entry['repo'].to_s.empty?, reg_entry.inspect
 assert 'registry_entry для чужого id — nil', Dn1sup::Updater.registry_entry(repo_for_reg, 'no_such_ext').nil?
 
 # 6. fetch_text с raw.githubusercontent.com

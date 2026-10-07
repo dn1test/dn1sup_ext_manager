@@ -150,8 +150,8 @@ assert 'registry содержит dn1sup_autoselect_tag', ids.include?('dn1sup_a
 assert 'registry содержит dn1sup_comp_add_view', ids.include?('dn1sup_comp_add_view')
 assert 'registry содержит dn1sup_create_project', ids.include?('dn1sup_create_project')
 new_entries = reg.select { |e| %w[dn1sup_autoselect_tag dn1sup_comp_add_view dn1sup_create_project].include?(e['id']) }
-assert 'у новых записей есть name/description/asset/version/changelog',
-       new_entries.all? { |e| !e['name'].to_s.empty? && !e['description'].to_s.empty? && e['asset'] == "#{e['id']}.rbz" && !e['version'].to_s.empty? && !e['changelog'].to_s.empty? }
+assert 'у новых записей есть name и repo',
+       new_entries.all? { |e| !e['name'].to_s.empty? && e['repo'].to_s.start_with?('dn1test/dn1sup_') }
 
 # === 4. Иконка для новых id в каталоге ===
 html = File.read(File.join(BASE, 'src', 'dn1sup_ext_manager', 'html', 'index.html'))

@@ -140,6 +140,17 @@ module Dn1sup
       Dn1sup::Updater.log_error(e)
       {}
     end
+    # Поиск .rbz ассета в релизе репозитория
+    def find_rbz_asset(release, preferred_name = nil)
+      return nil unless release.is_a?(Hash) && release['assets'].is_a?(Array)
+      assets = release['assets']
+      if preferred_name && !preferred_name.to_s.empty?
+        found = assets.find { |a| a['name'].to_s.casecmp?(preferred_name.to_s) }
+        return found if found
+      end
+      assets.find { |a| a['name'].to_s.end_with?('.rbz') }
+    end
+
     # Извлечение персонального лога изменений для конкретного расширения
     def extract_extension_changelog(body, entry)
       id   = entry['id'].to_s
@@ -181,8 +192,6 @@ module Dn1sup
         id   = entry['id'].to_s
         repo = entry['repo'].to_s
         name = entry['name'].to_s.empty? ? id : entry['name'].to_s
-        desc = entry['description'].to_s
-        asset = entry['asset'].to_s
 
         release = check_releases ? latest_release(repo, force) : (rel_map[repo.to_s] || {})
         installed_ver = installed_version(entry)
@@ -192,6 +201,16 @@ module Dn1sup
         release_body = release.is_a?(Hash) ? release['body'].to_s : ''
         published_at = release.is_a?(Hash) ? release['published_at'].to_s : ''
         release_url  = release.is_a?(Hash) ? release['html_url'].to_s : ''
+
+        # Находим .rbz ассет в релизе конкретного репозитория
+        rbz_asset  = find_rbz_asset(release, entry['asset'])
+        asset_name = rbz_asset ? rbz_asset['name'].to_s : (entry['asset'] || "#{id}.rbz").to_s
+
+        # Описание: из репозитория/релиза или из реестра
+        desc = entry['description'].to_s
+        if desc.empty? && release.is_a?(Hash) && !release['name'].to_s.empty? && release['name'] != latest_tag
+          desc = release['name'].to_s
+        end
 
         # Персональный лог изменений для этого расширения
         changelog = extract_extension_changelog(release_body, entry)
@@ -211,7 +230,7 @@ module Dn1sup
           'name'              => name,
           'description'       => desc,
           'repo'              => repo,
-          'asset'             => asset,
+          'asset'             => asset_name,
           'installed_version' => installed_ver,
           'is_installed'      => is_installed,
           'latest_version'    => ext_target_ver.empty? ? '—' : ext_target_ver,
@@ -236,28 +255,30 @@ module Dn1sup
 
       repo = entry['repo'].to_s
       name = entry['name'].to_s.empty? ? id : entry['name'].to_s
-      release = latest_release(repo)
+      release = latest_release(repo, true)
       unless release.is_a?(Hash) && release.key?('tag_name')
         return { 'ok' => false, 'error' => "#{name}: не удалось получить список релизов с GitHub." }
       end
 
-      url = Dn1sup::Updater.asset_url(release, entry['asset'].to_s)
+      # Ищем .rbz ассет в релизе репозитория
+      rbz_asset = find_rbz_asset(release, entry['asset'])
+      url = rbz_asset ? rbz_asset['browser_download_url'] : Dn1sup::Updater.asset_url(release, entry['asset'].to_s)
       if url.to_s.empty?
         return {
           'ok' => false,
-          'error' => "#{name}: в последнем релизе (#{release['tag_name']}) нет файла «#{entry['asset']}»."
+          'error' => "#{name}: в последнем релизе (#{release['tag_name']}) не найден .rbz файл для установки."
         }
       end
 
       ok = Dn1sup::Updater.install_from_url(url, "#{name} (#{release['tag_name']})", true)
       if ok
-        # Сохраняем актуальную версию из релиза репозитория (реестр — fallback)
+        # Сохраняем актуальную версию из релиза репозитория
         installed_ver = release['tag_name'].to_s.sub(/\Av/i, '')
         installed_ver = entry['version'].to_s.sub(/\Av/i, '') if installed_ver.empty?
         Sketchup.write_default('DN1Sup ExtManager', "installed_#{id}", installed_ver) if defined?(Sketchup)
         { 'ok' => true, 'message' => "Расширение «#{name}» (v#{installed_ver}) успешно установлено! Перезапустите SketchUp для полной загрузки компонентов." }
       else
-        { 'ok' => false, 'error' => "SketchUp не удалось установить архив «#{entry['asset']}»." }
+        { 'ok' => false, 'error' => "SketchUp не удалось установить архив расширения «#{name}»." }
       end
     rescue StandardError => e
       Dn1sup::Updater.log_error(e)
