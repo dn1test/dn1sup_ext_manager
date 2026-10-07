@@ -47,33 +47,11 @@ DEV_EXCLUDE_DIRS = %w[
   frontend
 ].freeze
 
-# Конфигурация источников расширений
+# Конфигурация источников: в репозитории менеджера собирается только сам менеджер
 SOURCES = {
   'dn1sup_ext_manager' => {
     loader: File.expand_path('../src/dn1sup_ext_manager.rb', __dir__),
     dir:    File.expand_path('../src/dn1sup_ext_manager', __dir__)
-  },
-  'dn1sup_autoselect_tag' => {
-    loader: File.join(EXT_BASE, 'dn1sup_autoselect_tag', 'dn1sup_autoselect_tag', 'dn1sup_autoselect_tag.rb'),
-    dir:    File.join(EXT_BASE, 'dn1sup_autoselect_tag', 'dn1sup_autoselect_tag', 'dn1sup_autoselect_tag')
-  },
-  'dn1sup_comp_add_view' => {
-    loader: File.join(EXT_BASE, 'dn1sup_comp_add_view', 'su_component_add_view.rb'),
-    dir:    File.join(EXT_BASE, 'dn1sup_comp_add_view', 'su_component_add_view'),
-    target_loader_name: 'dn1sup_comp_add_view.rb',
-    target_dir_name:    'dn1sup_comp_add_view'
-  },
-  'dn1sup_time_project2' => {
-    loader: File.join(EXT_BASE, 'dn1sup_time_project2', 'dn1sup_time_project2', 'dn1sup_time_project2.rb'),
-    dir:    File.join(EXT_BASE, 'dn1sup_time_project2', 'dn1sup_time_project2', 'dn1sup_time_project2')
-  },
-  'dn1sup_create_project' => {
-    loader: File.join(EXT_BASE, 'dn1sup_create_project', 'dn1sup_create_project', 'dn1sup_create_project.rb'),
-    dir:    File.join(EXT_BASE, 'dn1sup_create_project', 'dn1sup_create_project', 'dn1sup_create_project')
-  },
-  'dn1sup_save_settings' => {
-    loader: File.join(EXT_BASE, 'dn1sup_save_settings', 'dn1sup_save_settings', 'dn1sup_save_settings.rb'),
-    dir:    File.join(EXT_BASE, 'dn1sup_save_settings', 'dn1sup_save_settings', 'dn1sup_save_settings')
   }
 }.freeze
 
@@ -84,21 +62,7 @@ def resolve_source(id)
   loader = cfg[:loader]
   dir    = cfg[:dir]
   return cfg if File.file?(loader) && File.directory?(dir)
-
-  # Фолбэки поиска внутри папки расширения
-  root = File.join(EXT_BASE, id)
-  candidates = [
-    [File.join(root, "#{id}.rb"), File.join(root, id)],
-    [File.join(root, id, "#{id}.rb"), File.join(root, id, id)],
-    [File.join(root, 'su_component_add_view.rb'), File.join(root, 'su_component_add_view')]
-  ]
-  candidates.each do |c_ldr, c_dir|
-    if File.file?(c_ldr) && File.directory?(c_dir)
-      return cfg.merge(loader: c_ldr, dir: c_dir)
-    end
-  end
-
-  cfg
+  nil
 end
 
 def extract_version(loader_path, dir_path)
@@ -205,10 +169,7 @@ registry.each do |entry|
   next if id_filter && id != id_filter
 
   source = resolve_source(id)
-  unless source && File.file?(source[:loader]) && File.directory?(source[:dir])
-    warn "Пропуск #{id}: исходники не найдены по пути #{source ? source[:dir] : 'не задан'}."
-    next
-  end
+  next unless source && File.file?(source[:loader]) && File.directory?(source[:dir])
 
   detected_ver = extract_version(source[:loader], source[:dir])
   if detected_ver && detected_ver != entry['version']

@@ -143,12 +143,7 @@ end
 # --- Ожидания по пакетам ------------------------------------------------------
 
 EXPECTED = {
-  'dn1sup_ext_manager'    => ['Dn1sup::ExtManager::VERSION', '0.3.0'],
-  'dn1sup_time_project2'  => ['Dn1supTimeProject2::VERSION', '2.4.0'],
-  'dn1sup_create_project' => ['Dn1supCreateProject::VERSION', '1.2.1'],
-  'dn1sup_autoselect_tag' => ['Dn1sup::AutoSelectTag::VERSION', '0.3.0'],
-  'dn1sup_comp_add_view'  => ['CustomTools::ComponentAddViews', nil],
-  'dn1sup_save_settings'  => ['Dn1supSaveSettings::VERSION', '0.6.1']
+  'dn1sup_ext_manager' => ['Dn1sup::ExtManager::VERSION', '0.3.0']
 }.freeze
 
 def const_value(path)

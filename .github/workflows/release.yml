@@ -22,11 +22,11 @@ jobs:
       - name: Run Smoke Tests
         run: ruby test/smoke_test.rb
 
-      - name: Build all RBZ
+      - name: Build ExtManager RBZ
         run: ruby tools/pack.rb
 
-      - name: Create GitHub Release with all RBZ
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            packages/*.rbz
+            packages/dn1sup_ext_manager.rbz

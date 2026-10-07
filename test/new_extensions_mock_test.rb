@@ -12,6 +12,7 @@ def assert(label, cond, details = '')
 end
 
 BASE = File.expand_path('..', __dir__)
+$LOAD_PATH.unshift File.join(BASE, 'src')
 
 module Sketchup
   class Entity
@@ -129,66 +130,17 @@ MB_OK = 0
 def file_loaded?(_); false; end
 def file_loaded(_); true; end
 
-# === 1. dn1sup_autoselect_tag ===
-ext_base = ENV['SKETCHUP_EXT_ROOT'] || File.expand_path('../..', __dir__)
-tag_main = [
-  File.join(ext_base, 'dn1sup_autoselect_tag', 'dn1sup_autoselect_tag', 'dn1sup_autoselect_tag', 'main.rb'),
-  File.join(ext_base, 'dn1sup_autoselect_tag', 'dn1sup_autoselect_tag', 'main.rb')
-].find { |f| File.file?(f) }
-
-if tag_main
-  require tag_main
-  M = Dn1sup::AutoSelectTag
-  assert 'константы расширения autoselect_tag', M::ID == 'dn1sup_autoselect_tag' && M::REPO == 'dn1test/sketchup-dn1sup-extensions'
-  assert 'установлен AppObserver', Sketchup.app_observers.size == 1
-  assert 'наблюдатель сущностей подключён к модели', Sketchup.active_model.entities.observers.size == 1
-
-  # Отложенное назначение тега через таймер
-  dim = Sketchup::Dimension.new
-  Sketchup.active_model.entities.notify_added(dim)
-  assert 'Dimension получил тег Dimension после flush', dim.layer == 'Dimension'
-  txt = Sketchup::Text.new
-  Sketchup.active_model.entities.notify_added(txt)
-  assert 'Text получил тег Label после flush', txt.layer == 'Label'
-  line = Sketchup::Line.new
-  Sketchup.active_model.entities.notify_added(line)
-  assert 'Line не тегируется', line.layer.nil?
-
-  # Отложенность: при нулевом интервале flush выполняется сразу после notify;
-  # erase-элемент перед defer_assign пропускается
-  before = UI.timers.size
-  d2 = Sketchup::Dimension.new
-  Sketchup.active_model.entities.notify_added(d2)
-  assert 'Dimension тегируется при повторном добавлении (auto-flush)', d2.layer == 'Dimension'
-  assert 'повторное подключение модели подавлено', Sketchup.active_model.entities.observers.size == 1
-  d3 = Sketchup::Dimension.new
-  d3.erase
-  Dn1sup::AutoSelectTag.defer_assign(Sketchup.active_model, d3)
-  assert 'erase перед flush пропускает тегирование', d3.layer.nil?
-
-  # Компонент: onComponentAdded подключает наблюдатель сущностей определения
-  defn_ents = Sketchup::Entities.new(Sketchup.active_model)
-  defn = Struct.new(:entities).new(defn_ents)
-  Sketchup.active_model.definitions.notify_added(defn)
-  assert 'наблюдатель подключён к определению компонента', defn_ents.observers.size == 1
-  dim_in_comp = Sketchup::Dimension.new
-  defn_ents.notify_added(dim_in_comp)
-  assert 'размер внутри компонента тегируется', dim_in_comp.layer == 'Dimension'
-else
-  puts 'SKIP autoselect_tag: внешняя папка не найдена'
-end
-
-# === 2. dn1sup_comp_add_view ===
-comp_main = File.join(ext_base, 'dn1sup_comp_add_view', 'su_component_add_view', 'main.rb')
-if File.file?(comp_main)
-  require comp_main
-  assert 'меню и тулбар зарегистрированы', $dialog_log.include?('MENU_ITEM') && $dialog_log.include?('TOOLBAR_SHOW')
-  settings = CustomTools::ComponentAddViews::Settings.get_settings
-  assert 'settings возвращает 5 значений', settings.is_a?(Array) && settings.size == 5, settings.inspect
-  assert 'settings: side_view/offset валидны', %w[Справа Слева].include?(settings[3]) && !settings[4].to_s.empty?
-else
-  puts 'SKIP comp_add_view: внешняя папка не найдена'
-end
+# === 1. registry.json содержит валидные репозитории расширений ===
+require 'json'
+reg = JSON.parse(File.read(File.join(BASE, 'registry.json')))
+ids = reg.map { |e| e['id'] }
+assert 'registry содержит dn1sup_ext_manager', ids.include?('dn1sup_ext_manager')
+assert 'registry содержит dn1sup_autoselect_tag', ids.include?('dn1sup_autoselect_tag')
+assert 'registry содержит dn1sup_comp_add_view', ids.include?('dn1sup_comp_add_view')
+assert 'registry содержит dn1sup_create_project', ids.include?('dn1sup_create_project')
+assert 'registry содержит dn1sup_time_project2', ids.include?('dn1sup_time_project2')
+assert 'registry содержит dn1sup_save_settings', ids.include?('dn1sup_save_settings')
+assert 'каждая запись ссылается на свой репозиторий', reg.all? { |e| e['repo'].start_with?('dn1test/dn1sup_') }
 
 # === 3. registry.json содержит новые расширения ===
 require 'json'
@@ -208,6 +160,7 @@ assert 'getPluginIcon: comp_add_view → 📐', html.include?("if (s.includes('c
 assert 'getPluginIcon: create_project → 📁', html.include?("if (s.includes('create_project') || s.includes('project')) return '📁'")
 
 # === 5. Единое меню без глобальных переменных ===
+require_relative '../src/dn1sup_ext_manager/main'
 assert 'Dn1sup.common_menu определен и возвращает меню', defined?(Dn1sup) && Dn1sup.respond_to?(:common_menu) && !Dn1sup.common_menu.nil?
 assert 'глобальные переменные $dn1sup_common_menu и $dn1sup_menu не создаются', !defined?($dn1sup_common_menu) && !defined?($dn1sup_menu)
 
