@@ -3,7 +3,7 @@
     "id": "dn1sup_ext_manager",
     "name": "DN1Sup Extension Store",
     "repo": "dn1test/dn1sup_ext_manager",
-    "version": "0.3.0"
+    "version": "0.3.1"
   },
   {
     "id": "dn1sup_time_project2",
@@ -12,7 +12,7 @@
   },
   {
     "id": "dn1sup_create_project",
-    "name": "DN1SUP Create Project",
+    "name": "DN1Sup Create Project",
     "repo": "dn1test/dn1sup_create_project"
   },
   {
@@ -27,7 +27,7 @@
   },
   {
     "id": "dn1sup_save_settings",
-    "name": "DN1SUP Save Settings",
+    "name": "DN1Sup Save Settings",
     "repo": "dn1test/dn1sup_save_settings"
   }
 ]

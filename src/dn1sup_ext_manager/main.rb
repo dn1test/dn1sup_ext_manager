@@ -13,13 +13,13 @@ module Dn1sup
   def self.common_menu
     @common_menu ||= begin
       legacy = (defined?($dn1sup_common_menu) && $dn1sup_common_menu) || (defined?($dn1sup_menu) && $dn1sup_menu)
-      legacy || UI.menu('Extensions').add_submenu('DN1SUP')
+      legacy || UI.menu('Extensions').add_submenu('DN1Sup')
     end
   end
 
   module ExtManager
     ID      = 'dn1sup_ext_manager'
-    VERSION = '0.3.0'
+    VERSION = '0.3.1'
     REPO    = 'dn1test/dn1sup_ext_manager'
     ASSET   = "#{ID}.rbz"
     PAGE_URL     = "https://github.com/#{REPO}/releases"
@@ -508,11 +508,11 @@ module Dn1sup
     end
 
     unless file_loaded?(__FILE__)
-      # Общее меню DN1SUP — синглтон в корневом модуле Dn1sup, разделяется всеми
-      # расширениями DN1SUP без глобальных переменных.
+      # Общее меню DN1Sup — синглтон в корневом модуле Dn1sup, разделяется всеми
+      # расширениями DN1Sup без глобальных переменных.
       common = Dn1sup.common_menu
 
-      # Пункты расширения — в подменю «Extension Store» внутри DN1SUP
+      # Пункты расширения — в подменю «Extension Store» внутри DN1Sup
       menu = common.add_submenu('Extension Store')
       menu.add_item('Каталог расширений…') { open_store }
       menu.add_item('Проверить обновления менеджера') do

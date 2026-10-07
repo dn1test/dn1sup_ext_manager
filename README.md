@@ -136,3 +136,10 @@ ruby test/live_github_test.rb
 ### Цифровая подпись (перспектива)
 
 Возможна подача пакетов на подпись Trimble (SketchUp 2022+ показывает «подписанный издатель») через [extensions.sketchup.com/extension/sign](https://extensions.sketchup.com/extension/sign); решений о её использовании пока не принималось.
+
+---
+
+## Автор и лицензия
+
+- **Автор**: DN1Sup <dn1codegen@gmail.com>
+- **Лицензия**: MIT — см. файл [LICENSE](LICENSE)
