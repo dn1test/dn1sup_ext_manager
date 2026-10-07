@@ -266,5 +266,16 @@ ensure
   Dn1sup::ExtManager.instance_variable_set(:@release_cache, {})
 end
 
+# 14. INFO-логирование: log_info пишет в лог-файл с префиксом [INFO]
+Dn1sup::Updater.log_info('smoke_test_probe_log_info')
+Dn1sup::Updater.log_error(RuntimeError.new('smoke_test_probe_log_error'))
+slog = File.join(Sketchup.temp_dir, 'dn1sup_updater.log')
+assert 'log_info: лог-файл создан', File.file?(slog), slog
+if File.file?(slog)
+  last2 = File.readlines(slog, encoding: 'UTF-8').last(2).join
+  assert 'log_info пишет [INFO] строку в лог', last2.include?('[INFO] smoke_test_probe_log_info'), last2
+  assert 'log_error пишет [ERROR] строку в лог', last2.include?('[ERROR] RuntimeError: smoke_test_probe_log_error'), last2
+end
+
 puts "\n#{$failed.zero? ? 'ALL TESTS PASSED' : "#{$failed} FAILED"}"
 exit($failed.zero? ? 0 : 1)

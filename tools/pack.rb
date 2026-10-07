@@ -111,6 +111,9 @@ def pack(id, source, shared_updater, reg_path)
     # 3. Синхронизация dn1sup_updater.rb в упаковываемый архив
     if File.file?(shared_updater)
       FileUtils.cp(shared_updater, File.join(stage_plugin_dir, 'dn1sup_updater.rb'))
+      # и в dev-копию src (иначе Sketchup.require в dev-режиме подхватывает устаревший код)
+      src_copy = File.expand_path("src/#{File.basename(id)}/dn1sup_updater.rb", __dir__)
+      FileUtils.cp(shared_updater, src_copy) if File.file?(src_copy)
     end
 
     # 4. Для dn1sup_ext_manager: комплектуем актуальный data/registry.json

@@ -19,7 +19,7 @@ module Dn1sup
 
   module ExtManager
     ID      = 'dn1sup_ext_manager'
-    VERSION = '0.5.0'
+    VERSION = '0.6.0'
     REPO    = 'dn1test/dn1sup_ext_manager'
     ASSET   = "#{ID}.rbz"
     PAGE_URL     = "https://github.com/#{REPO}/releases"
@@ -299,12 +299,16 @@ module Dn1sup
     def perform_install(id)
       entries = load_registry
       entry = entries.find { |e| e['id'].to_s == id.to_s }
-      return { 'ok' => false, 'error' => "Расширение «#{id}» не найдено в реестре." } unless entry
+      unless entry
+        store_log("установка '#{id}': расширение не найдено в реестре")
+        return { 'ok' => false, 'error' => "Расширение «#{id}» не найдено в реестре." }
+      end
 
       repo = entry['repo'].to_s
       name = entry['name'].to_s.empty? ? id : entry['name'].to_s
       release = latest_release(repo, true)
       unless release.is_a?(Hash) && release.key?('tag_name')
+        store_log("установка '#{id}': релизы #{repo} недоступны")
         return { 'ok' => false, 'error' => "#{name}: не удалось получить список релизов с GitHub." }
       end
 
@@ -312,6 +316,7 @@ module Dn1sup
       rbz_asset = find_rbz_asset(release, entry['asset'])
       url = rbz_asset ? rbz_asset['browser_download_url'] : Dn1sup::Updater.asset_url(release, entry['asset'].to_s)
       if url.to_s.empty?
+        store_log("установка '#{id}': в релизе #{release['tag_name']} нет .rbz-ассета")
         return {
           'ok' => false,
           'error' => "#{name}: в последнем релизе (#{release['tag_name']}) не найден .rbz файл для установки."
@@ -324,8 +329,10 @@ module Dn1sup
         installed_ver = release['tag_name'].to_s.sub(/\Av/i, '')
         installed_ver = entry['version'].to_s.sub(/\Av/i, '') if installed_ver.empty?
         Sketchup.write_default('DN1Sup ExtManager', "installed_#{id}", installed_ver) if defined?(Sketchup)
+        store_log("установлен/обновлён #{id} -> v#{installed_ver} (#{repo})")
         { 'ok' => true, 'message' => "Расширение «#{name}» (v#{installed_ver}) успешно установлено! Перезапустите SketchUp для полной загрузки компонентов." }
       else
+        store_log("установка #{id} (#{repo}) НЕУДАЧНА: архив не установлен")
         { 'ok' => false, 'error' => "SketchUp не удалось установить архив расширения «#{name}»." }
       end
     rescue StandardError => e
@@ -371,6 +378,7 @@ module Dn1sup
       Sketchup.write_default('DN1Sup ExtManager', "installed_#{id}", nil)
       Sketchup.write_default('Dn1supUpdater', "last_#{id}", 0)
 
+      store_log("удалён #{id} из Plugins")
       { 'ok' => true, 'message' => "Расширение «#{id}» удалено из папки Plugins. Запись в меню исчезнет после перезапуска SketchUp." }
     rescue StandardError => e
       Dn1sup::Updater.log_error(e)
@@ -397,7 +405,10 @@ module Dn1sup
       #    Если кэш пуст (новая сессия) — подгружаем снапшот последних
       #    успешных релизов, чтобы версии и changelog'и были видны офлайн.
       load_release_snapshot if @release_cache.empty?
-      push_state(dlg, collect_products_data(false, check_releases: false))
+      local = collect_products_data(false, check_releases: false)
+      store_log("каталог: локальная отрисовка, #{local.is_a?(Array) ? local.size : 0} продуктов" \
+                "#{force ? ', force-обновление' : ''}")
+      push_state(dlg, local)
 
       # 2. Фоновое обновление версий через сеть (только сетевые запросы, без SketchUp API в потоке)
       entries = load_registry
@@ -422,9 +433,12 @@ module Dn1sup
           result
         end,
         lambda do |fetched_releases|
-          return unless @dialog
+          next unless @dialog
 
-          if fetched_releases.is_a?(Hash) && fetched_releases.any?
+          fetched = fetched_releases.to_h
+          store_log("каталог: релизы получены #{fetched.size}/#{repos.size}" \
+                    "#{fetched.size < repos.size && attempts_left == 0 ? ' (часть недоступна)' : ''}")
+          if fetched.is_a?(Hash) && fetched.any?
             @release_cache.merge!(fetched_releases)
             save_release_snapshot
             push_state(dlg, collect_products_data(false, check_releases: false, releases: @release_cache))
@@ -510,6 +524,7 @@ module Dn1sup
       @dialog.set_file(HTML_PATH)
       register_callbacks(@dialog)
       @dialog.show
+      store_log("каталог открыт (Store v#{VERSION})")
     end
 
     def register_callbacks(dlg)
@@ -518,9 +533,20 @@ module Dn1sup
       end
     end
 
+    # Псевдоним для логов: все события каталога помечаются "ExtStore".
+    def store_log(message)
+      Dn1sup::Updater.log_info("ExtStore: #{message}")
+    end
+
     # Диспетчер команд интерфейса (единый колбэк 'call_ruby').
     # param — JSON { id: '...' } для действий над карточками.
     def dispatch(dlg, name, param)
+      id = begin
+        parse_json(param)['id']
+      rescue StandardError
+        nil
+      end
+      store_log("команда '#{name}'#{id && !id.to_s.empty? ? " (#{id})" : ''}")
       case name
       when 'ready', 'get_state'
         # Хук ошибок JS инжектится на каждый запрос состояния: идемпотентен
@@ -531,12 +557,12 @@ module Dn1sup
       when 'refresh'
         send_products_to_dialog(force: true)
       when 'install'
-        id = parse_json(param)['id']
-        notify_action_result(id, 'install', perform_install(id))
+        iid = parse_json(param)['id']
+        notify_action_result(iid, 'install', perform_install(iid))
         send_products_to_dialog(force: false)
       when 'update'
-        id = parse_json(param)['id']
-        notify_action_result(id, 'update', perform_update(id))
+        iid = parse_json(param)['id']
+        notify_action_result(iid, 'update', perform_update(iid))
         send_products_to_dialog(force: false)
       when 'confirm_uninstall'
         # Подтверждение удаления через нативный диалог SketchUp

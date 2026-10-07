@@ -39,6 +39,12 @@
    - JS error hook (error/unhandledrejection → `log_js_error`) инжектится со
      стороны Ruby при `ready` — без пересборки фронтенда.
    - Вне SketchUp (`npm run dev` в браузере) работает mock-режим (`mocks.js`).
+8. **Логирование (v0.6.0)**:
+   - `Dn1sup::Updater.log_error` — `[ERROR]`-строки (исключение + backtrace 5 строк);
+   - `Dn1sup::Updater.log_info` — `[INFO]`-события: команды каталога (`ExtStore:`),
+     ответы GitHub (`latest_release(repo): OK vX / HTTP …`), установка/удаление,
+     сводки опросов; записи через Mutex (потокобезопасно);
+   - файл `Sketchup.temp_dir/dn1sup_updater.log`, ротация при >1 МБ в `.old`.
 
 ---
 

@@ -143,7 +143,7 @@ end
 # --- Ожидания по пакетам ------------------------------------------------------
 
 EXPECTED = {
-  'dn1sup_ext_manager' => ['Dn1sup::ExtManager::VERSION', '0.5.0']
+  'dn1sup_ext_manager' => ['Dn1sup::ExtManager::VERSION', '0.6.0']
 }.freeze
 
 def const_value(path)

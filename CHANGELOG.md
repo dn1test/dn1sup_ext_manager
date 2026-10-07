@@ -7,6 +7,21 @@
 репозиториях (`dn1test/dn1sup_*`); этот репозиторий хранит только реестр
 каталога (`registry.json`: id/name/repo), необходимый для установки и обновлений.
 
+## [0.6.0] — 2026-10-07
+
+### DN1Sup Extension Store (v0.6.0)
+- **Информационное логирование** (`Dn1sup::Updater.log_info`): ключевые события
+  каталога теперь видны в ` Sketchup.temp_dir/dn1sup_updater.log` с меткой
+  `[INFO]`, ошибки — с меткой `[ERROR]` (ранее в лог попадали только ошибки без
+  контекста и without событий Store):
+  - открытие каталога, отдача локального снапшота (число продуктов);
+  - каждая команда интерфейса (`ready`, `refresh`, `install`, `update`, …);
+  - запросы релизов по каждому репозиторию (`latest_release(repo): OK v…` / HTTP-код);
+  - сводка опроса (сколько релизов получено), установка/удаление с результатом.
+- **Потокобезопасность лога**: запись через Mutex (фоновые потоки + главный).
+- `tools/pack.rb` синхронизирует общие файлы из `shared/` и в dev-копию
+  `src/dn1sup_ext_manager/` (ранее — только в архив).
+
 ## [0.5.0] — 2026-10-07
 
 ### DN1Sup Extension Store (v0.5.0)
@@ -96,6 +111,7 @@
 - Первый релиз менеджера расширений: установка и обновление .rbz напрямую с GitHub Releases.
 - Интерактивный HTML-интерфейс каталога.
 
+[0.6.0]: https://github.com/dn1test/dn1sup_ext_manager/releases
 [0.5.0]: https://github.com/dn1test/dn1sup_ext_manager/releases
 [0.4.1]: https://github.com/dn1test/dn1sup_ext_manager/releases
 [0.4.0]: https://github.com/dn1test/dn1sup_ext_manager/releases
