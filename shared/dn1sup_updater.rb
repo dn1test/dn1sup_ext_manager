@@ -426,13 +426,30 @@ module Dn1sup
       Dir.tmpdir
     end
 
-    def short_notes(text)
-      t = text.to_s.gsub("\r", '').strip
-      t = t.lines.first(8).join("\n")
-      if t.length > 500
-        t[0, 500].sub(/\s+\S*\z/, '').to_s + ' …'
+    # Краткая суть изменений для показа пользователю (уведомления, "Что нового"
+    # в каталоге): 1-3 строки без markdown, максимум ~200 символов.
+    # Подробности остаются в CHANGELOG.md/странице релиза GitHub.
+    def short_notes(text, max_len = 200)
+      t = text.to_s
+      t = t.gsub(/\r/, '')
+      t = t.gsub(/!\[[^\]]*\]\([^)]*\)/, '')          # ![img](…)
+      t = t.gsub(/\[([^\]]+)\]\([^)]*\)/, '\1')       # [text](url) -> text
+      t = t.gsub(/^#{Regexp.escape('#')}+\s*/, '')    # заголовки "# "
+      t = t.gsub(/^>\s*/, '')                         # цитаты
+      t = t.gsub(/^[-*+]\s+/, '')                     # маркеры списков
+      t = t.gsub(/\*\*/, '')                          # жирный
+      t = t.gsub(/[*`~]/, '')                         # курсив/код/зачёркивание
+
+
+      t = t.gsub(/<\/?[a-z][^>]*>/i, '')              # html-теги
+      lines = t.split(/\n+/).map { |l| l.squeeze(' ').strip }.reject(&:empty?)
+      out = lines.first(3).join("\n")
+      return '' if out.empty?
+      if out.length > max_len
+        cut = out[0, max_len].sub(/\s+\S*\z/, '')
+        "#{cut} …"
       else
-        t
+        out
       end
     end
 

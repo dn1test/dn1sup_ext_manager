@@ -19,7 +19,7 @@ module Dn1sup
 
   module ExtManager
     ID      = 'dn1sup_ext_manager'
-    VERSION = '0.6.1'
+    VERSION = '0.6.2'
     REPO    = 'dn1test/dn1sup_ext_manager'
     ASSET   = "#{ID}.rbz"
     PAGE_URL     = "https://github.com/#{REPO}/releases"
@@ -199,31 +199,33 @@ module Dn1sup
       assets.find { |a| a['name'].to_s.end_with?('.rbz') }
     end
 
-    # Извлечение персонального лога изменений для конкретного расширения
+    # Извлечение персонального лога изменений для конкретного расширения.
+    # Для показа в приложении — краткая суть (1-3 строки, без markdown) через
+    # Dn1sup::Updater.short_notes; подробности остаются в CHANGELOG и на GitHub.
     def extract_extension_changelog(body, entry)
       id   = entry['id'].to_s
       name = entry['name'].to_s
+      fallback = 'Лог изменений для этого расширения отсутствует.'
 
-      if body.is_a?(String) && !body.strip.empty?
-        # Ищем персональную секцию расширения в Release Notes:
-        # ### [dn1sup_ext_manager] или ### dn1sup_ext_manager (v0.2.0) или ## DN1Sup Extension Store
-        escaped_keys = [Regexp.escape(id), Regexp.escape(name)].reject(&:empty?).join('|')
-        pattern = /(?:^|\n)[#]{2,4}\s*(?:\[?(?:#{escaped_keys})\]?)[^\n]*\n(.*?)(?=\n[#]{2,4}\s|\z)/mi
-        if (m = body.match(pattern))
-          text = m[1].to_s.strip
-          return text unless text.empty?
+      raw =
+        if body.is_a?(String) && !body.strip.empty?
+          # Ищем персональную секцию расширения в Release Notes:
+          # ### [dn1sup_ext_manager] или ### dn1sup_ext_manager (v0.2.0) или ## DN1Sup Extension Store
+          escaped_keys = [Regexp.escape(id), Regexp.escape(name)].reject(&:empty?).join('|')
+          pattern = /(?:^|\n)[#]{2,4}\s*(?:\[?(?:#{escaped_keys})\]?)[^\n]*\n(.*?)(?=\n[#]{2,4}\s|\z)/mi
+          if (m = body.match(pattern)) && !m[1].to_s.strip.empty?
+            m[1].to_s.strip
+          else
+            # Для отдельных репозиториев тело релиза целиком является логом изменений
+            body.strip
+          end
+        else
+          entry['changelog'].to_s.strip
         end
 
-        # Для отдельных репозиториев тело релиза целиком является логом изменений
-        clean_body = body.strip
-        return clean_body unless clean_body.empty?
-      end
+      return fallback if raw.empty?
 
-      # Если в релизе нет лога — берём персональный лог из реестра
-      entry_log = entry['changelog'].to_s.strip
-      return entry_log unless entry_log.empty?
-
-      'Лог изменений для этого расширения отсутствует.'
+      Dn1sup::Updater.short_notes(raw)
     end
 
     # Сбор сводки по всем продуктам для HTML интерфейса.

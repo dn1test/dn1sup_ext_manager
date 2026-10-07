@@ -287,5 +287,19 @@ if File.file?(slog)
   $prefs['Dn1supUpdater']['debug'] = nil
 end
 
+# 15. Краткие заметки для UI: markdown вычищен, ≤3 строки, ~200 символов
+md = <<~BODY
+  ### Extension Store (v0.6.2)
+  - **Первый пункт** с `кодом` и [ссылкой](https://example.com/very/long/url)
+  ![img](https://example.com/img.png)
+  - **Второй пункт** — перенос
+  третьей строки, а это длинный-предлинный четвёртый пункт описания который превышает лимит двести символов и потому будет аккуратно усечён по границе слова с многоточием в конце чтобы не ломать отображение в интерфейсе
+BODY
+sn = Dn1sup::Updater.short_notes(md)
+assert 'short_notes: не содержит markdown-символов', ['**', '`', '](', '![', '### '].none? { |m| sn.include?(m) }, sn
+assert 'short_notes: не более 3 строк', sn.lines.size <= 3, "строк: #{sn.lines.size}"
+assert 'short_notes: длина в пределах', sn.length <= 210, "длина: #{sn.length}"
+assert 'short_notes: markdown-текст -> plain', sn.include?('Первый пункт'), sn
+
 puts "\n#{$failed.zero? ? 'ALL TESTS PASSED' : "#{$failed} FAILED"}"
 exit($failed.zero? ? 0 : 1)

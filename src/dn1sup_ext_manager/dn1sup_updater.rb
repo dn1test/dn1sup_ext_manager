@@ -90,11 +90,11 @@ module Dn1sup
       uri = URI.parse("#{GITHUB_API}/repos/#{repo}/releases/latest")
       res = http_get(uri)
       unless res.is_a?(Net::HTTPSuccess)
-        log_info("latest_release(#{repo}): HTTP #{res.respond_to?(:code) ? res.code : '?'}")
+        log_debug("latest_release(#{repo}): HTTP #{res.respond_to?(:code) ? res.code : '?'}")
         return {}
       end
       json = JSON.parse(res.body)
-      log_info("latest_release(#{repo}): OK #{json['tag_name'].to_s}")
+      log_debug("latest_release(#{repo}): OK #{json['tag_name'].to_s}")
       json
     rescue StandardError, ScriptError => e
       log_error(e)
@@ -195,24 +195,24 @@ module Dn1sup
     def install_from_url(url, what = 'расширение', silent = false)
       url = url.to_s
       if url.empty?
-        log_info("install_from_url(#{what}): пустой URL — отмена")
+        log_debug("install_from_url(#{what}): пустой URL — отмена")
         return false
       end
       unless defined?(Sketchup) && Sketchup.respond_to?(:install_from_archive)
-        log_info("install_from_url(#{what}): install_from_archive недоступен")
+        log_debug("install_from_url(#{what}): install_from_archive недоступен")
         inform("#{what}: Sketchup.install_from_archive недоступен в этой версии SketchUp.") unless silent
         return false
       end
-      log_info("install_from_url(#{what}): скачивание #{url}")
+      log_debug("install_from_url(#{what}): скачивание #{url}")
       path = download_to_temp(url)
       unless path
-        log_info("install_from_url(#{what}): скачивание не удалось")
+        log_debug("install_from_url(#{what}): скачивание не удалось")
         inform("#{what}: не удалось скачать обновление.\n" \
                'Проверьте соединение или скачайте .rbz вручную со страницы релиза.') unless silent
         return false
       end
       unless rbz?(path)
-        log_info("install_from_url(#{what}): файл #{File.basename(path)} не похож на .rbz")
+        log_debug("install_from_url(#{what}): файл #{File.basename(path)} не похож на .rbz")
         inform("#{what}: скачанный файл не похож на .rbz — вероятно, ошибка сети. Попробуйте позже.") unless silent
         return false
       end
@@ -223,7 +223,7 @@ module Dn1sup
         log_error(e)
         false
       end
-      log_info("install_from_url(#{what}): install_from_archive -> #{ok ? 'OK' : 'FAIL'}")
+      log_debug("install_from_url(#{what}): install_from_archive -> #{ok ? 'OK' : 'FAIL'}")
       if ok
         inform("#{what}: обновление установлено.\n\n" \
                'Перезапустите SketchUp, чтобы новый код загрузился.') unless silent
@@ -426,13 +426,30 @@ module Dn1sup
       Dir.tmpdir
     end
 
-    def short_notes(text)
-      t = text.to_s.gsub("\r", '').strip
-      t = t.lines.first(8).join("\n")
-      if t.length > 500
-        t[0, 500].sub(/\s+\S*\z/, '').to_s + ' …'
+    # Краткая суть изменений для показа пользователю (уведомления, "Что нового"
+    # в каталоге): 1-3 строки без markdown, максимум ~200 символов.
+    # Подробности остаются в CHANGELOG.md/странице релиза GitHub.
+    def short_notes(text, max_len = 200)
+      t = text.to_s
+      t = t.gsub(/\r/, '')
+      t = t.gsub(/!\[[^\]]*\]\([^)]*\)/, '')          # ![img](…)
+      t = t.gsub(/\[([^\]]+)\]\([^)]*\)/, '\1')       # [text](url) -> text
+      t = t.gsub(/^#{Regexp.escape('#')}+\s*/, '')    # заголовки "# "
+      t = t.gsub(/^>\s*/, '')                         # цитаты
+      t = t.gsub(/^[-*+]\s+/, '')                     # маркеры списков
+      t = t.gsub(/\*\*/, '')                          # жирный
+      t = t.gsub(/[*`~]/, '')                         # курсив/код/зачёркивание
+
+
+      t = t.gsub(/<\/?[a-z][^>]*>/i, '')              # html-теги
+      lines = t.split(/\n+/).map { |l| l.squeeze(' ').strip }.reject(&:empty?)
+      out = lines.first(3).join("\n")
+      return '' if out.empty?
+      if out.length > max_len
+        cut = out[0, max_len].sub(/\s+\S*\z/, '')
+        "#{cut} …"
       else
-        t
+        out
       end
     end
 
@@ -468,13 +485,25 @@ module Dn1sup
       nil
     end
 
-    # Информационные записи о ключевых событиях (каталог, релизы, установка).
-    # Пишутся всегда — события редки и удобны для диагностики; в консоль — при debug.
+    # Информационные записи о ключевых событиях (изменения, установка/удаление,
+    # открытие каталога) — всегда пишутся в краткий прикладной лог.
     def log_info(message)
       append_log("#{Time.now.strftime('%Y-%m-%d %H:%M:%S')} [INFO] #{message}", [])
       return unless debug?
 
       puts "DN1Sup Updater: #{message}"
+    rescue StandardError
+      nil
+    end
+
+    # Подробные записи (каждая команда UI, каждый сетевой запрос, отрисовка) —
+    # только в dev-режиме (Sketchup.write_default('Dn1supUpdater', 'debug', true))
+    # или в консоль при debug. В обычном прикладном логе не мусорят.
+    def log_debug(message)
+      return unless debug?
+
+      append_log("#{Time.now.strftime('%Y-%m-%d %H:%M:%S')} [DEBUG] #{message}", [])
+      puts "DN1Sup Updater (debug): #{message}"
     rescue StandardError
       nil
     end
