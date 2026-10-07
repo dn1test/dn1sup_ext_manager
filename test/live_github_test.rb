@@ -5,7 +5,7 @@ require 'net/http'
 require 'json'
 require 'tmpdir'
 
-REPO = 'dn1test/sketchup-dn1sup-extensions'
+REPO = 'dn1test/dn1sup_ext_manager'
 ENV['GITHUB_TOKEN'] ||= ENV['GH_TOKEN']
 $failed = 0
 

@@ -5,7 +5,12 @@ require 'net/http'
 require 'json'
 require 'tmpdir'
 
-ENV['GITHUB_TOKEN'] ||= ENV['GH_TOKEN']
+ENV['GITHUB_TOKEN'] ||= ENV['GH_TOKEN'] || (begin
+  t = `gh auth token 2>nul`.strip
+  t.empty? ? nil : t
+rescue StandardError
+  nil
+end)
 
 $dialog_log = []
 $failed = 0

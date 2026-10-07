@@ -27,7 +27,7 @@
 GitHub Release (тег v*)
         │  Сборщик прикрепляет собранные .rbz пакеты к релизу
         ▼
-  .rbz в релизе  ──►  https://github.com/dn1test/sketchup-dn1sup-extensions/releases/latest/download/{ID}.rbz
+  .rbz в релизе  ──►  https://github.com/dn1test/dn1sup_ext_manager/releases/latest/download/{ID}.rbz
         │             (постоянная прямая ссылка на последний релиз)
         ▼
   Dn1sup::Updater ──► raw.githubusercontent.com/.../registry.json (версия конкретного расширения)
@@ -43,7 +43,7 @@ GitHub Release (тег v*)
 
 ### 1. Первичная установка Extension Store
 
-1. Скачайте актуальный файл [dn1sup_ext_manager.rbz](https://github.com/dn1test/sketchup-dn1sup-extensions/releases/latest/download/dn1sup_ext_manager.rbz).
+1. Скачайте актуальный файл [dn1sup_ext_manager.rbz](https://github.com/dn1test/dn1sup_ext_manager/releases/latest/download/dn1sup_ext_manager.rbz).
 2. В SketchUp откройте: **Расширения (Extensions) → Extension Manager → Install Extension** и выберите скачанный `.rbz`.
 3. Перезапустите SketchUp.
 
