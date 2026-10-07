@@ -133,6 +133,15 @@ ruby test/live_github_test.rb
   ```
 - Для принудительной проверки обновлений менеджера:
   меню **Extensions → DN1Sup → Extension Store → «Проверить обновления менеджера»**.
+- **Подробный (debug) лог**: в прикладной лог `Sketchup.temp_dir/dn1sup_updater.log`
+  пишутся только ключевые события (`[INFO]`: открытие каталога, установка/обновление
+  и удаление, ошибки `[ERROR]`). Подробные записи (`[DEBUG]`: каждая команда UI,
+  каждый сетевой запрос, отрисовка) включаются флагом:
+  ```ruby
+  Sketchup.write_default('Dn1supUpdater', 'debug', true)
+  Dn1sup::ExtManager.reload
+  ```
+  Подробная история изменений ведётся в [CHANGELOG.md](CHANGELOG.md) и релизах GitHub.
 
 ---
 

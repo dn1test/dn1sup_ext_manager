@@ -19,7 +19,7 @@ module Dn1sup
 
   module ExtManager
     ID      = 'dn1sup_ext_manager'
-    VERSION = '0.6.0'
+    VERSION = '0.6.1'
     REPO    = 'dn1test/dn1sup_ext_manager'
     ASSET   = "#{ID}.rbz"
     PAGE_URL     = "https://github.com/#{REPO}/releases"
@@ -406,8 +406,8 @@ module Dn1sup
       #    успешных релизов, чтобы версии и changelog'и были видны офлайн.
       load_release_snapshot if @release_cache.empty?
       local = collect_products_data(false, check_releases: false)
-      store_log("каталог: локальная отрисовка, #{local.is_a?(Array) ? local.size : 0} продуктов" \
-                "#{force ? ', force-обновление' : ''}")
+      store_debug("отрисовка каталога: #{local.is_a?(Array) ? local.size : 0} продуктов" \
+                  "#{force ? ', force-обновление' : ''}")
       push_state(dlg, local)
 
       # 2. Фоновое обновление версий через сеть (только сетевые запросы, без SketchUp API в потоке)
@@ -436,8 +436,8 @@ module Dn1sup
           next unless @dialog
 
           fetched = fetched_releases.to_h
-          store_log("каталог: релизы получены #{fetched.size}/#{repos.size}" \
-                    "#{fetched.size < repos.size && attempts_left == 0 ? ' (часть недоступна)' : ''}")
+          store_debug("релизы получены #{fetched.size}/#{repos.size}" \
+                      "#{fetched.size < repos.size && attempts_left == 0 ? ' (часть недоступна)' : ''}")
           if fetched.is_a?(Hash) && fetched.any?
             @release_cache.merge!(fetched_releases)
             save_release_snapshot
@@ -533,9 +533,13 @@ module Dn1sup
       end
     end
 
-    # Псевдоним для логов: все события каталога помечаются "ExtStore".
+    # Псевдонимы для логов: события каталога помечаются "ExtStore".
     def store_log(message)
       Dn1sup::Updater.log_info("ExtStore: #{message}")
+    end
+
+    def store_debug(message)
+      Dn1sup::Updater.log_debug("ExtStore: #{message}")
     end
 
     # Диспетчер команд интерфейса (единый колбэк 'call_ruby').
@@ -546,7 +550,7 @@ module Dn1sup
       rescue StandardError
         nil
       end
-      store_log("команда '#{name}'#{id && !id.to_s.empty? ? " (#{id})" : ''}")
+      store_debug("команда '#{name}'#{id && !id.to_s.empty? ? " (#{id})" : ''}")
       case name
       when 'ready', 'get_state'
         # Хук ошибок JS инжектится на каждый запрос состояния: идемпотентен

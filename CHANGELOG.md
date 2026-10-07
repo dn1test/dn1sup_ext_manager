@@ -7,6 +7,18 @@
 репозиториях (`dn1test/dn1sup_*`); этот репозиторий хранит только реестр
 каталога (`registry.json`: id/name/repo), необходимый для установки и обновлений.
 
+## [0.6.1] — 2026-10-07
+
+### DN1Sup Extension Store (v0.6.1)
+- **Прикладной лог в приложении сделан кратким** (`Sketchup.temp_dir/dn1sup_updater.log`):
+  остаются только ключевые события — открытие каталога, результат установки/
+  обновления/удаления расширений и ошибки (`[INFO]` / `[ERROR]`).
+- **Подробные записи убраны из прикладного лога в dev-режим**: каждая команда UI,
+  каждый запрос релиза, отрисовка каталога и ход скачивания теперь пишутся на
+  уровне `[DEBUG]` и появляются только при включённом флаге
+  `Sketchup.write_default('Dn1supUpdater', 'debug', true)` (см. README «Dev-режим»).
+- Подробная история изменений остаётся в [CHANGELOG.md](CHANGELOG.md) и релизах GitHub.
+
 ## [0.6.0] — 2026-10-07
 
 ### DN1Sup Extension Store (v0.6.0)
@@ -21,6 +33,8 @@
 - **Потокобезопасность лога**: запись через Mutex (фоновые потоки + главный).
 - `tools/pack.rb` синхронизирует общие файлы из `shared/` и в dev-копию
   `src/dn1sup_ext_manager/` (ранее — только в архив).
+- `latest_release(repo)`: в лог пишется запрос по каждому репозиторию
+  (`OK v…` / HTTP-код ошибки) — подробности видны в dev-режиме (см. [0.6.1]).
 
 ## [0.5.0] — 2026-10-07
 
@@ -111,6 +125,7 @@
 - Первый релиз менеджера расширений: установка и обновление .rbz напрямую с GitHub Releases.
 - Интерактивный HTML-интерфейс каталога.
 
+[0.6.1]: https://github.com/dn1test/dn1sup_ext_manager/releases
 [0.6.0]: https://github.com/dn1test/dn1sup_ext_manager/releases
 [0.5.0]: https://github.com/dn1test/dn1sup_ext_manager/releases
 [0.4.1]: https://github.com/dn1test/dn1sup_ext_manager/releases
