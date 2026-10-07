@@ -3,7 +3,7 @@
     "id": "dn1sup_ext_manager",
     "name": "DN1Sup Extension Store",
     "description": "Каталог, установка и обновление расширений с GitHub.",
-    "repo": "dn1test/sketchup-dn1sup-extensions",
+    "repo": "dn1test/dn1sup_ext_manager",
     "asset": "dn1sup_ext_manager.rbz",
     "version": "0.3.0",
     "changelog": "- Меню перенесено в общее меню всех расширений DN1SUP → Extension Store\n- Мгновенное открытие каталога без ожидания ответа сети (локальный реестр загружается сразу)\n- Потокобезопасный запрос релизов с GitHub: сетевые вызовы изолированы от SketchUp API\n- Таймауты HTTP сокращены до 4-6 с для защиты от зависаний при нестабильной сети\n- Страховочный таймаут и кнопка повтора в веб-интерфейсе при сбоях загрузки"
@@ -12,7 +12,7 @@
     "id": "dn1sup_time_project2",
     "name": "DN1Sup Time Project 2",
     "description": "Учёт активного времени работы над проектом: статистика по дням, часам и дням недели хранится внутри файла модели (.skp).",
-    "repo": "dn1test/sketchup-dn1sup-extensions",
+    "repo": "dn1test/dn1sup_time_project2",
     "asset": "dn1sup_time_project2.rbz",
     "version": "2.4.0",
     "changelog": "- Хранение статистики непосредственно внутри файла модели (.skp) в словаре атрибутов вместо внешнего stats.yaml\n- Автоматическая миграция существующей статистики из stats.yaml в файл модели при открытии\n- Статистика перемещается вместе с файлом модели при копировании и отправке\n- Пункты меню добавляются через общее меню DN1SUP (Dn1sup.common_menu)\n- Веб-интерфейс на Vue 3 + Tailwind CSS со светлой и тёмной темой\n- Dev-инструменты исключены из релизного архива"
@@ -21,16 +21,16 @@
     "id": "dn1sup_create_project",
     "name": "DN1SUP Create Project",
     "description": "Создание и оформление мебельных проектов: структура папок, карточка YAML, картинки и документы.",
-    "repo": "dn1test/sketchup-dn1sup-extensions",
+    "repo": "dn1test/dn1sup_create_project",
     "asset": "dn1sup_create_project.rbz",
-    "version": "1.1.0",
+    "version": "1.2.1",
     "changelog": "- Создание структуры мебельных проектов (бытовые и коммерческие) с шаблонами папок и файлов\n- Карточка проекта YAML с историей изменений и синхронизацией путей\n- Групповое добавление файлов и картинок с превью и распределением по подпапкам\n- Генерация уникальных артикулов с посекундным штампом времени\n- Веб-интерфейс на Vue 3, интеграция в единое меню DN1SUP и панель инструментов"
   },
   {
     "id": "dn1sup_autoselect_tag",
     "name": "DN1Sup AutoSelect Tag",
     "description": "Автоматически назначает теги Dimension и Label размерам и текстовым меткам.",
-    "repo": "dn1test/sketchup-dn1sup-extensions",
+    "repo": "dn1test/dn1sup_autoselect_tag",
     "asset": "dn1sup_autoselect_tag.rbz",
     "version": "0.3.0",
     "changelog": "- Меню перенесено в общее меню всех расширений DN1SUP → AutoSelect Tag\n- Меню настроек параметров тегов через нативный HtmlDialog («Настройки…»)\n- Выбор существующих тегов модели или добавление нового прямо из интерфейса\n- Сохранение параметров в реестре SketchUp\n- Опция пакетного переназначения тегов для существующих размеров и меток в модели"
@@ -39,9 +39,18 @@
     "id": "dn1sup_comp_add_view",
     "name": "DN1Sup Component Add View",
     "description": "Копии компонентов и групп со сдвигом влево и поворотом по осям Z и X, проекции вида сверху и сбоку.",
-    "repo": "dn1test/sketchup-dn1sup-extensions",
+    "repo": "dn1test/dn1sup_comp_add_view",
     "asset": "dn1sup_comp_add_view.rbz",
     "version": "1.3.0",
     "changelog": "- Переход на единое меню Dn1sup.common_menu (без глобальных переменных): пункт DN1SUP не дублируется между расширениями DN1Sup\n- Создание копий компонентов и групп слева с поворотом по осям Z и X\n- Проекции вида сверху и сбоку с адаптивным или фиксированным отступом\n- Настройки в settings.yaml, единая undo-транзакция, SVG-иконки на тулбаре"
+  },
+  {
+    "id": "dn1sup_save_settings",
+    "name": "DN1SUP Save Settings",
+    "description": "Сохранение параметров SketchUp в zip-архив и восстановление из архива; история сохранений с датами.",
+    "repo": "dn1test/dn1sup_save_settings",
+    "asset": "dn1sup_save_settings.rbz",
+    "version": "0.6.1",
+    "changelog": "- Сохранение 7 путей настроек (PrivatePreferences.json, SharedPreferences.json, Components, Materials, Plugins, Styles, Templates) в zip-архив с выбором состава и комментарием\n- Восстановление из архива: состав из манифеста, автобэкап текущего состояния перед восстановлением, предупреждения о перезапуске\n- История сохранений с датами и бейджами типов (ручная/быстрая/авто/импорт), импорт zip с диска, удаление и открытие папки хранилища\n- Движок zip — встроенный в Windows tar.exe (без зависимостей); относительные пути в архиве — перенос между машинами и версиями SketchUp\n- Веб-интерфейс на Vue 3 + Tailwind CSS со светлой и тёмной темой"
   }
 ]

@@ -20,7 +20,7 @@ module Dn1sup
   module ExtManager
     ID      = 'dn1sup_ext_manager'
     VERSION = '0.3.0'
-    REPO    = 'dn1test/sketchup-dn1sup-extensions'
+    REPO    = 'dn1test/dn1sup_ext_manager'
     ASSET   = "#{ID}.rbz"
     PAGE_URL     = "https://github.com/#{REPO}/releases"
     REGISTRY_URL = "https://raw.githubusercontent.com/#{REPO}/main/registry.json"
@@ -154,9 +154,13 @@ module Dn1sup
           text = m[1].to_s.strip
           return text unless text.empty?
         end
+
+        # Для отдельных репозиториев тело релиза целиком является логом изменений
+        clean_body = body.strip
+        return clean_body unless clean_body.empty?
       end
 
-      # Если в общем релизе нет персональной секции — берём персональный лог из реестра
+      # Если в релизе нет лога — берём персональный лог из реестра
       entry_log = entry['changelog'].to_s.strip
       return entry_log unless entry_log.empty?
 
@@ -192,9 +196,8 @@ module Dn1sup
         # Персональный лог изменений для этого расширения
         changelog = extract_extension_changelog(release_body, entry)
 
-        # Актуальная версия расширения: из реестра (если задана) либо из тега общего релиза
-        ext_target_ver = entry['version'].to_s
-        ext_target_ver = latest_tag if ext_target_ver.empty?
+        # Актуальная версия расширения: из тега релиза репозитория либо из реестра
+        ext_target_ver = !latest_tag.empty? ? latest_tag.sub(/\Av/i, '') : entry['version'].to_s
 
         has_update = false
         if is_installed && !ext_target_ver.empty?
@@ -248,10 +251,9 @@ module Dn1sup
 
       ok = Dn1sup::Updater.install_from_url(url, "#{name} (#{release['tag_name']})", true)
       if ok
-        # Сохраняем per-extension версию из реестра (тег монорепо — fallback):
-        # именно с ней сравнивается установленная версия в каталоге.
-        installed_ver = entry['version'].to_s.sub(/\Av/, '')
-        installed_ver = release['tag_name'].to_s.sub(/\Av/, '') if installed_ver.empty?
+        # Сохраняем актуальную версию из релиза репозитория (реестр — fallback)
+        installed_ver = release['tag_name'].to_s.sub(/\Av/i, '')
+        installed_ver = entry['version'].to_s.sub(/\Av/i, '') if installed_ver.empty?
         Sketchup.write_default('DN1Sup ExtManager', "installed_#{id}", installed_ver) if defined?(Sketchup)
         { 'ok' => true, 'message' => "Расширение «#{name}» (v#{installed_ver}) успешно установлено! Перезапустите SketchUp для полной загрузки компонентов." }
       else

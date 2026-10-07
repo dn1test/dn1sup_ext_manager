@@ -15,14 +15,10 @@
 # В корень .rbz кладётся loader-файл <id>.rb, а папка <id>/ копируется целиком.
 # Версии автоматически считываются из лоадеров внешних проектов и обновляются в registry.json.
 # Общие файлы из shared/ (dn1sup_updater.rb) синхронизируются в архив автоматически.
-# Перед архивацией Ruby-логика внутри <id>/ обфусцируется (tools/protect.rb):
-# корневой лоадер и config.rb остаются открытыми, DN1SUP_NO_PROTECT=1 отключает.
 
 require 'json'
 require 'fileutils'
 require 'tmpdir'
-
-require_relative 'protect'
 
 reg_path       = File.expand_path('../registry.json', __dir__)
 shared_updater = File.expand_path('../shared/dn1sup_updater.rb', __dir__)
@@ -74,6 +70,10 @@ SOURCES = {
   'dn1sup_create_project' => {
     loader: File.join(EXT_BASE, 'dn1sup_create_project', 'dn1sup_create_project', 'dn1sup_create_project.rb'),
     dir:    File.join(EXT_BASE, 'dn1sup_create_project', 'dn1sup_create_project', 'dn1sup_create_project')
+  },
+  'dn1sup_save_settings' => {
+    loader: File.join(EXT_BASE, 'dn1sup_save_settings', 'dn1sup_save_settings', 'dn1sup_save_settings.rb'),
+    dir:    File.join(EXT_BASE, 'dn1sup_save_settings', 'dn1sup_save_settings', 'dn1sup_save_settings')
   }
 }.freeze
 
@@ -136,7 +136,6 @@ def pack(id, source, shared_updater, reg_path)
   FileUtils.mkdir_p(File.dirname(out))
   FileUtils.rm_f(out)
 
-  protected_count = 0
   Dir.mktmpdir do |tmp|
     stage = File.join(tmp, 'stage')
     FileUtils.mkdir_p(stage)
@@ -172,11 +171,7 @@ def pack(id, source, shared_updater, reg_path)
     DEV_EXCLUDE_FILES.each { |f| FileUtils.rm_f(File.join(stage_plugin_dir, f)) }
     DEV_EXCLUDE_DIRS.each  { |d| FileUtils.rm_rf(File.join(stage_plugin_dir, d)) }
 
-    # 6. Обфускация Ruby-логики («свой rbe», см. tools/protect.rb).
-    #    Отключается переменной окружения DN1SUP_NO_PROTECT=1 (для отладки).
-    protected_count = ENV['DN1SUP_NO_PROTECT'] ? 0 : Dn1supPack::Protect.protect_plugin!(stage_plugin_dir)
-
-    # 7. Архивация в .rbz
+    # 6. Архивация в .rbz
     zip_ok = false
     if system('zip', '-qr', out, '.', chdir: stage)
       zip_ok = true
@@ -198,8 +193,7 @@ def pack(id, source, shared_updater, reg_path)
     raise "Ошибка архивации #{out}" unless zip_ok && File.file?(out)
   end
 
-  obf_note = protected_count.positive? ? ", обфусцировано файлов: #{protected_count}" : ''
-  puts "  -> packages/#{id}.rbz (#{File.size(out)} bytes#{obf_note})"
+  puts "  -> packages/#{id}.rbz (#{File.size(out)} bytes)"
 end
 
 registry = JSON.parse(File.read(reg_path))

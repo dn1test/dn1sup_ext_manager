@@ -137,8 +137,8 @@ summary = Dn1sup::Updater.check!(
 assert 'check! вернул summary', summary.is_a?(Hash) && summary[:latest] == rel['tag_name'], summary.inspect
 assert 'check! записал метку времени', Sketchup.read_default('Dn1supUpdater', 'last_test').is_a?(Integer)
 
-# 5b. registry_entry монорепо: per-extension версия из registry.json
-repo_for_reg = 'dn1test/sketchup-dn1sup-extensions'
+# 5b. registry_entry: per-extension версия из registry.json
+repo_for_reg = 'dn1test/dn1sup_ext_manager'
 reg_entry = Dn1sup::Updater.registry_entry(repo_for_reg, 'dn1sup_time_project2')
 if reg_entry.nil?
   local_reg = JSON.parse(File.read(File.expand_path('../registry.json', __dir__)))
@@ -175,10 +175,11 @@ assert 'prompt_pick обрабатывает false без исключений',
 
 # 12. Проверка мгновенного сбора каталога без сети (offline mode)
 offline_products = Dn1sup::ExtManager.collect_products_data(false, check_releases: false)
-assert 'collect_products_data offline возвращает все расширения из реестра', offline_products.size == 5
+assert 'collect_products_data offline возвращает все расширения из реестра', offline_products.size == 6
 assert 'collect_products_data offline содержит id dn1sup_ext_manager', offline_products.any? { |p| p['id'] == 'dn1sup_ext_manager' }
 assert 'collect_products_data offline содержит id dn1sup_comp_add_view', offline_products.any? { |p| p['id'] == 'dn1sup_comp_add_view' }
 assert 'collect_products_data offline содержит id dn1sup_create_project', offline_products.any? { |p| p['id'] == 'dn1sup_create_project' }
+assert 'collect_products_data offline содержит id dn1sup_save_settings', offline_products.any? { |p| p['id'] == 'dn1sup_save_settings' }
 
 puts "\n#{$failed.zero? ? 'ALL TESTS PASSED' : "#{$failed} FAILED"}"
 exit($failed.zero? ? 0 : 1)

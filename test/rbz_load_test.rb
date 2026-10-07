@@ -3,21 +3,19 @@
 $stdout.sync = true
 
 # test/rbz_load_test.rb — офлайн-проверка собранных .rbz: для каждого пакета
-# эмулируется окружение SketchUp (лоадер -> активация -> стаб -> eval) и
+# эмулируется окружение SketchUp (лоадер -> активация -> require) и
 # проверяется, что расширение регистрируется и его код загружается.
 #
 #   ruby tools/pack.rb            # сначала собрать пакеты
 #   ruby test/rbz_load_test.rb
 #
 # SketchUp не нужен: UI/Sketchup подменяются мягкими стабами. Стенд проверяет
-# механизм доставки кода (обфускацию), а не логику плагинов — она покрыта
+# целостность и корректность сборки пакетов, а логика плагинов покрыта
 # smoke_test.rb и ручной проверкой в SketchUp.
 
 require 'tmpdir'
 require 'fileutils'
 require 'zip'
-
-require_relative '../tools/protect' # только для маркера (санити-проверка пакетов)
 
 $failed = 0
 
@@ -147,9 +145,10 @@ end
 EXPECTED = {
   'dn1sup_ext_manager'    => ['Dn1sup::ExtManager::VERSION', '0.3.0'],
   'dn1sup_time_project2'  => ['Dn1supTimeProject2::VERSION', '2.4.0'],
-  'dn1sup_create_project' => ['Dn1supCreateProject::VERSION', '1.1.0'],
+  'dn1sup_create_project' => ['Dn1supCreateProject::VERSION', '1.2.1'],
   'dn1sup_autoselect_tag' => ['Dn1sup::AutoSelectTag::VERSION', '0.3.0'],
-  'dn1sup_comp_add_view'  => ['CustomTools::ComponentAddViews', nil]
+  'dn1sup_comp_add_view'  => ['CustomTools::ComponentAddViews', nil],
+  'dn1sup_save_settings'  => ['Dn1supSaveSettings::VERSION', '0.6.1']
 }.freeze
 
 def const_value(path)
@@ -166,7 +165,7 @@ end
 # --- Тесты --------------------------------------------------------------------
 
 packages = Dir.glob(File.expand_path('../packages/*.rbz', __dir__)).sort
-assert 'найдены собранные пакеты', packages.size == 5, packages.map { |p| File.basename(p) }.join(', ')
+assert 'найдены собранные пакеты', packages.size == EXPECTED.size, packages.map { |p| File.basename(p) }.join(', ')
 
 Dir.mktmpdir do |tmp|
   # Фейковые sketchup.rb / extensions.rb — как настоящие, только со стабами выше
@@ -197,9 +196,9 @@ Dir.mktmpdir do |tmp|
         end
       end
 
-      # Санити: в пакете есть зашифрованные стабы
-      stubs = Dir.glob(File.join(plugins, id, '**', '*.rb')).count { |f| Dn1supPack::Protect.protected?(f) }
-      assert("#{id}: в пакете есть зашифрованные стабы", stubs.positive?, "#{stubs} шт.")
+      # Санити: распакованы исходные .rb файлы плагина
+      rb_files = Dir.glob(File.join(plugins, id, '**', '*.rb'))
+      assert("#{id}: в пакете есть .rb файлы", rb_files.any?, "#{rb_files.size} шт.")
 
       # 1. Регистрация: SketchUp грузит лоадер из Plugins
       load File.join(plugins, "#{id}.rb")
