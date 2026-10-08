@@ -113,10 +113,10 @@
 <script setup>
 import { computed, ref } from 'vue'
 import {
-  Puzzle, ChevronDown, Loader2, Zap, RotateCw, Download, Trash2,
-  CircleCheck, Circle
+  Puzzle, ChevronDown, Loader2, Zap, RotateCw, Download, Trash2
 } from 'lucide-vue-next'
 import { state, install, update, confirmUninstall } from '../composables/useSketchupBridge'
+import { useProductStatus } from '../composables/useProductStatus'
 
 const props = defineProps({ product: { type: Object, required: true } })
 const p = computed(() => props.product)
@@ -130,40 +130,5 @@ const changelogText = computed(() =>
 const isBusy = computed(() => state.busy?.id === p.value.id)
 const busy = computed(() => (isBusy.value ? state.busy : null))
 
-const statusText = computed(() => {
-  if (!p.value.is_installed) return 'Не установлено'
-  if (p.value.has_update) return 'Обновление'
-  return 'Установлено'
-})
-
-const statusCls = computed(() => {
-  if (!p.value.is_installed) {
-    return 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700'
-  }
-  if (p.value.has_update) {
-    return 'bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 font-semibold'
-  }
-  return 'bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
-})
-
-const statusIcon = computed(() =>
-  !p.value.is_installed ? Circle : (p.value.has_update ? Zap : CircleCheck)
-)
-
-const versionText = computed(() => {
-  const inst = p.value.installed_version
-  const latest = p.value.latest_version
-  if (p.value.has_update && inst) return `Версия: v${inst} → v${latest}`
-  if (p.value.is_installed && inst) return `Версия: v${inst}`
-  return `Доступно: v${latest || '—'}`
-})
-
-const versionTitle = computed(() => {
-  const inst = p.value.installed_version
-  return [
-    inst ? `установлена: v${inst}` : null,
-    p.value.latest_version ? `доступна: v${p.value.latest_version}` : null,
-    p.value.published_at ? `релиз: ${p.value.published_at}` : null
-  ].filter(Boolean).join(' · ')
-})
+const { statusText, statusCls, statusIcon, versionText, versionTitle } = useProductStatus(p)
 </script>

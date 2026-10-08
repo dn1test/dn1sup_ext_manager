@@ -1,6 +1,6 @@
 <template>
   <div class="h-full flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 transition-colors">
-    <Header :version="state.version" :refreshing="refreshing" @refresh="onRefresh" />
+    <Header :version="state.version" :refreshing="refreshing" v-model:view="view" @refresh="onRefresh" />
 
     <!-- Поиск и фильтры -->
     <div class="px-3.5 pt-2 pb-2 flex items-center gap-2 shrink-0">
@@ -39,11 +39,20 @@
 
     <!-- Каталог -->
     <main class="flex-1 min-h-0 overflow-y-auto px-3.5 pb-5 space-y-2">
-      <ProductCard
-        v-for="p in filteredProducts"
-        :key="p.id"
-        :product="p"
-      />
+      <template v-if="view === 'cards'">
+        <ProductCard
+          v-for="p in filteredProducts"
+          :key="p.id"
+          :product="p"
+        />
+      </template>
+      <template v-else>
+        <ProductRow
+          v-for="p in filteredProducts"
+          :key="p.id"
+          :product="p"
+        />
+      </template>
 
       <!-- Каталог загружается -->
       <div
@@ -120,10 +129,30 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { Search, SearchX, Loader2, Hourglass, RotateCw, CheckCircle2, AlertCircle, Info } from 'lucide-vue-next'
 import Header from './components/Header.vue'
 import ProductCard from './components/ProductCard.vue'
+import ProductRow from './components/ProductRow.vue'
 import { state, refresh, loadState } from './composables/useSketchupBridge'
 import { useTheme } from './composables/useTheme'
 
 useTheme()
+
+// -- вид каталога (карточки / список) --------------------------------------------
+
+const view = ref('cards')
+
+try {
+  const savedView = localStorage.getItem('dn1sup_view')
+  if (savedView === 'list' || savedView === 'cards') view.value = savedView
+} catch {
+  // ignore
+}
+
+watch(view, (v) => {
+  try {
+    localStorage.setItem('dn1sup_view', v)
+  } catch {
+    // ignore
+  }
+})
 
 // -- загрузка -------------------------------------------------------------------
 // Страховка: если данные не поступили за 3.5 сек — показываем «Повторить».

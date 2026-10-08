@@ -22,6 +22,14 @@
     <div class="flex items-center gap-1">
       <button
         class="p-1.5 rounded-lg text-slate-400 hover:text-brand-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+        :title="view === 'cards' ? 'Переключить на список' : 'Переключить на карточки'"
+        @click="$emit('update:view', view === 'cards' ? 'list' : 'cards')"
+      >
+        <Rows3 v-if="view === 'cards'" class="w-4 h-4" />
+        <LayoutGrid v-else class="w-4 h-4" />
+      </button>
+      <button
+        class="p-1.5 rounded-lg text-slate-400 hover:text-brand-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
         title="Проверить обновления всех расширений"
         @click="$emit('refresh')"
       >
@@ -40,14 +48,15 @@
 </template>
 
 <script setup>
-import { Package, RotateCw, Sun, Moon } from 'lucide-vue-next'
+import { Package, RotateCw, Sun, Moon, Rows3, LayoutGrid } from 'lucide-vue-next'
 import { useTheme } from '../composables/useTheme'
 
 defineProps({
   version: { type: String, default: '—' },
-  refreshing: { type: Boolean, default: false }
+  refreshing: { type: Boolean, default: false },
+  view: { type: String, default: 'cards' }
 })
-defineEmits(['refresh'])
+defineEmits(['refresh', 'update:view'])
 
 const { isDark, toggleTheme } = useTheme()
 </script>

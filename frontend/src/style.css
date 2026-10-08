@@ -54,6 +54,10 @@
     @apply border-amber-300 dark:border-amber-800/70 bg-amber-50/40 dark:bg-amber-950/10
       hover:border-amber-400 dark:hover:border-amber-700;
   }
+  /* Строка списка (компактный вид) */
+  .es-row {
+    @apply rounded-lg hover:bg-slate-50 dark:hover:bg-slate-900/80;
+  }
   /* Бейдж id расширения */
   .es-id-badge {
     @apply px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 border border-slate-200/70 dark:border-slate-700/60
