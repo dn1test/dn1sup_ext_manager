@@ -1,5 +1,5 @@
 <template>
-  <article class="es-card relative overflow-hidden" :class="{ 'es-card-update': p.has_update }">
+  <article class="es-card relative overflow-hidden" :class="{ 'es-card-update': p.has_update || p.status === 'switch' }">
     <div class="flex items-center gap-3 px-3 py-2.5">
       <!-- Иконка -->
       <div
@@ -61,6 +61,15 @@
             Обновить
           </button>
           <button
+            v-else-if="p.status === 'switch'"
+            class="es-btn-update !h-[30px] !px-2.5 !text-xs"
+            :title="`Установить v${p.latest_version}: релиз новее по дате, но ниже по номеру (смена схемы нумерации)`"
+            @click="update(p.id)"
+          >
+            <ArrowLeftRight :size="13" />
+            Установить
+          </button>
+          <button
             v-else-if="p.is_installed"
             class="es-btn-ghost !h-[30px] !px-2.5 !text-xs"
             title="Переустановить текущую версию"
@@ -113,7 +122,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import {
-  Puzzle, ChevronDown, Loader2, Zap, RotateCw, Download, Trash2
+  Puzzle, ChevronDown, Loader2, Zap, RotateCw, Download, Trash2, ArrowLeftRight
 } from 'lucide-vue-next'
 import { state, install, update, confirmUninstall } from '../composables/useSketchupBridge'
 import { useProductStatus } from '../composables/useProductStatus'

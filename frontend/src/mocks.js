@@ -30,8 +30,24 @@ let mockProducts = [
     is_installed: true,
     latest_version: '1.0.0',
     has_update: true,
+    status: 'update',
     changelog: 'Демо-лог изменений.',
     release_url: 'https://example.com/demo-extension-two/releases',
+    published_at: ''
+  },
+  {
+    id: 'demo_extension_three',
+    name: 'Demo Extension Three',
+    description: 'Демо-карточка смены версии: релиз новее по дате, но ниже по номеру.',
+    repo: 'example/demo-extension-three',
+    asset: 'demo_extension_three.rbz',
+    installed_version: '2.4.1',
+    is_installed: true,
+    latest_version: '0.4.1',
+    has_update: false,
+    status: 'switch',
+    changelog: 'Демо-лог изменений.',
+    release_url: 'https://example.com/demo-extension-three/releases',
     published_at: ''
   }
 ]
@@ -67,6 +83,7 @@ export function applyMockAction(name, params = {}) {
         item.is_installed = true
         item.installed_version = withVersion(item.latest_version)
         item.has_update = false
+        item.status = 'current'
       }
       window.pushResult('action_result', {
         id, action: 'install', ok: true,
@@ -82,6 +99,7 @@ export function applyMockAction(name, params = {}) {
       if (item) {
         item.installed_version = withVersion(item.latest_version)
         item.has_update = false
+        item.status = 'current'
       }
       window.pushResult('action_result', {
         id, action: 'update', ok: true,

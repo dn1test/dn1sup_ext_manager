@@ -26,7 +26,7 @@ const isMock = !getSketchup()
 const state = reactive({
   ready: false,
   version: '…',
-  products: [],  // [{id,name,description,repo,asset,installed_version,is_installed,latest_version,has_update,changelog,release_url,published_at}]
+  products: [],  // [{id,name,description,repo,asset,installed_version,is_installed,latest_version,has_update,status,changelog,release_url,published_at}]
   busy: null,    // { id, action, text } — длительная операция над карточкой
   toast: null    // { kind: 'ok' | 'err' | 'info', text }
 })

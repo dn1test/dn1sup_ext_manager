@@ -301,5 +301,57 @@ assert 'short_notes: не более 3 строк', sn.lines.size <= 3, "стр�
 assert 'short_notes: длина в пределах', sn.length <= 210, "длина: #{sn.length}"
 assert 'short_notes: markdown-текст -> plain', sn.include?('Первый пункт'), sn
 
+# 16. Выбор предлагаемого релиза и статусы: сценарий смены схемы нумерации
+# (реальная ситуация dn1sup_time_project2: релиз v0.4.1 опубликован позже
+# серии 2.4.x, /releases/latest указывает на 0.4.1 при установленной 2.4.1)
+tp_list = [
+  { 'tag_name' => 'v0.4.1', 'published_at' => '2026-10-09T06:17:55Z' },
+  { 'tag_name' => 'v2.4.1', 'published_at' => '2026-10-07T14:45:39Z' },
+  { 'tag_name' => 'v2.4.0', 'published_at' => '2026-10-07T05:28:57Z' }
+]
+tp_offered = Dn1sup::Updater.choose_release(tp_list)
+assert 'choose_release берёт новейший по дате публикации', tp_offered['tag_name'] == 'v0.4.1', tp_offered['tag_name'].to_s
+assert 'product_status: 0.3.0 -> 0.4.1 это update', Dn1sup::Updater.product_status('0.3.0', tp_offered, tp_list) == 'update'
+assert 'product_status: 2.4.1 -> 0.4.1 это switch', Dn1sup::Updater.product_status('2.4.1', tp_offered, tp_list) == 'switch'
+assert 'product_status: 2.4.0 -> 0.4.1 это switch', Dn1sup::Updater.product_status('2.4.0', tp_offered, tp_list) == 'switch'
+assert 'product_status: 0.4.1 -> 0.4.1 это current', Dn1sup::Updater.product_status('0.4.1', tp_offered, tp_list) == 'current'
+assert 'product_status: v-префикс нормализуется', Dn1sup::Updater.product_status('v0.4.1', tp_offered, tp_list) == 'current'
+assert 'product_status: установленная новее, её релиза нет в списке — без предложения',
+       Dn1sup::Updater.product_status('9.9.9', tp_offered, tp_list).nil?
+assert 'product_status: 2.3.0 тоже ниже 0.4.1 отсутствует в списке — без предложения',
+       Dn1sup::Updater.product_status('2.3.0', tp_offered, tp_list).nil?
+assert 'product_status: не установлено — nil', Dn1sup::Updater.product_status(nil, tp_offered, tp_list).nil?
+assert 'product_status: релизы недоступны — nil', Dn1sup::Updater.product_status('2.4.1', nil, []).nil?
+# Если самый свежий по дате релиз — сама установленная версия (перепубликованный
+# тег), предлагаемого действия нет; при равных датах предлагаемый не новее —
+# тоже без предложения (строгое сравнение).
+repub = [
+  { 'tag_name' => 'v2.4.1', 'published_at' => '2026-10-11T00:00:00Z' },
+  { 'tag_name' => 'v0.4.1', 'published_at' => '2026-10-09T06:17:55Z' }
+]
+assert 'product_status: перепубликованный установленный тег — current',
+       Dn1sup::Updater.product_status('2.4.1', Dn1sup::Updater.choose_release(repub), repub) == 'current'
+same_time = [
+  { 'tag_name' => 'v0.4.1', 'published_at' => '2026-10-09T06:17:55Z' },
+  { 'tag_name' => 'v2.4.1', 'published_at' => '2026-10-09T06:17:55Z' }
+]
+assert 'product_status: равные даты публикации — без предложения',
+       Dn1sup::Updater.product_status('2.4.1', Dn1sup::Updater.choose_release(same_time), same_time).nil?
+pre_list = [
+  { 'tag_name' => 'v0.5.0-rc1', 'prerelease' => true, 'published_at' => '2026-10-10T00:00:00Z' },
+  { 'tag_name' => 'v0.4.9', 'published_at' => '2026-10-01T00:00:00Z' }
+]
+assert 'choose_release пропускает prerelease', Dn1sup::Updater.choose_release(pre_list)['tag_name'] == 'v0.4.9'
+assert 'choose_release пустой/битый список — nil', Dn1sup::Updater.choose_release([nil, 'x', {}]).nil?
+
+# 17. Живой список релизов GET /releases
+live_releases = Dn1sup::Updater.releases('zinin/sketchup-mcp2')
+assert 'releases возвращает непустой массив', live_releases.is_a?(Array) && live_releases.any?, "#{live_releases.size} релизов"
+live_offered = Dn1sup::Updater.choose_release(live_releases)
+assert 'choose_release по живому списку даёт тег из этого списка',
+       live_offered && live_releases.any? { |r| r['tag_name'] == live_offered['tag_name'] }, live_offered && live_offered['tag_name']
+bad_releases = Dn1sup::Updater.releases('nonexistent-user-000/nonexistent-repo-999')
+assert 'releases 404 -> [] (устойчивость)', bad_releases == []
+
 puts "\n#{$failed.zero? ? 'ALL TESTS PASSED' : "#{$failed} FAILED"}"
 exit($failed.zero? ? 0 : 1)

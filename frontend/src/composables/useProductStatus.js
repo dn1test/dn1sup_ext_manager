@@ -1,11 +1,20 @@
 import { computed } from 'vue'
-import { Circle, Zap, CircleCheck } from 'lucide-vue-next'
+import { Circle, Zap, CircleCheck, ArrowLeftRight } from 'lucide-vue-next'
+
+// p.status приходит из Ruby (Dn1sup::Updater.product_status):
+//   'update'  — есть релиз новее по номеру версии;
+//   'switch'  — релиз новее по дате, но ниже по номеру (смена схемы нумерации);
+//   'current' — установлена актуальная версия;
+//   ''        — нет данных / не установлено.
+const isUpdate = (p) => p.has_update || p.status === 'update'
+const isSwitch = (p) => !!p.is_installed && p.status === 'switch'
 
 export function useProductStatus(productRef) {
   const statusText = computed(() => {
     const p = productRef.value
     if (!p.is_installed) return 'Не установлено'
-    if (p.has_update) return 'Обновление'
+    if (isUpdate(p)) return 'Обновление'
+    if (isSwitch(p)) return 'Смена версии'
     return 'Установлено'
   })
 
@@ -14,22 +23,28 @@ export function useProductStatus(productRef) {
     if (!p.is_installed) {
       return 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700'
     }
-    if (p.has_update) {
+    if (isUpdate(p)) {
       return 'bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 font-semibold'
+    }
+    if (isSwitch(p)) {
+      return 'bg-sky-100 dark:bg-sky-900/60 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-800 font-semibold'
     }
     return 'bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
   })
 
   const statusIcon = computed(() => {
     const p = productRef.value
-    return !p.is_installed ? Circle : (p.has_update ? Zap : CircleCheck)
+    if (!p.is_installed) return Circle
+    if (isUpdate(p)) return Zap
+    if (isSwitch(p)) return ArrowLeftRight
+    return CircleCheck
   })
 
   const versionText = computed(() => {
     const p = productRef.value
     const inst = p.installed_version
     const latest = p.latest_version
-    if (p.has_update && inst) return `Версия: v${inst} → v${latest}`
+    if ((isUpdate(p) || isSwitch(p)) && inst) return `Версия: v${inst} → v${latest}`
     if (p.is_installed && inst) return `Версия: v${inst}`
     return `Доступно: v${latest || '—'}`
   })
@@ -40,7 +55,8 @@ export function useProductStatus(productRef) {
     return [
       inst ? `установлена: v${inst}` : null,
       p.latest_version ? `доступна: v${p.latest_version}` : null,
-      p.published_at ? `релиз: ${p.published_at}` : null
+      p.published_at ? `релиз: ${p.published_at}` : null,
+      isSwitch(p) ? 'релиз новее по дате публикации, но ниже по номеру (смена схемы нумерации)' : null
     ].filter(Boolean).join(' · ')
   })
 

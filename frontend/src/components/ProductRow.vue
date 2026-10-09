@@ -1,7 +1,7 @@
 <template>
   <article
     class="es-card es-row relative overflow-hidden"
-    :class="{ 'es-card-update': p.has_update }"
+    :class="{ 'es-card-update': p.has_update || p.status === 'switch' }"
   >
     <div class="flex items-center gap-2 px-3 py-1.5">
       <Puzzle :size="14" class="text-slate-400 dark:text-slate-500 shrink-0" :title="p.id" />
@@ -45,6 +45,15 @@
             Обновить
           </button>
           <button
+            v-else-if="p.status === 'switch'"
+            class="es-btn-update !h-[28px] !px-2 !text-xs"
+            :title="`Установить v${p.latest_version}: релиз новее по дате, но ниже по номеру (смена схемы нумерации)`"
+            @click="update(p.id)"
+          >
+            <ArrowLeftRight :size="12" />
+            Установить
+          </button>
+          <button
             v-else-if="p.is_installed"
             class="es-btn-ghost !h-[28px] !px-2 !text-xs"
             title="Переустановить текущую версию"
@@ -80,14 +89,14 @@
 
 <script setup>
 import { computed } from 'vue'
-import { Puzzle, Loader2, Zap, RotateCw, Download, Trash2, CircleCheck, Circle } from 'lucide-vue-next'
+import { Puzzle, Loader2, Zap, RotateCw, Download, Trash2, ArrowLeftRight } from 'lucide-vue-next'
 import { state, install, update, confirmUninstall } from '../composables/useSketchupBridge'
 import { useProductStatus } from '../composables/useProductStatus'
 
 const props = defineProps({ product: { type: Object, required: true } })
 const p = computed(() => props.product)
 
-const { statusText, statusCls, versionText, versionTitle } = useProductStatus(p)
+const { statusText, statusCls, statusIcon, versionText, versionTitle } = useProductStatus(p)
 
 const isBusy = computed(() => state.busy?.id === p.value.id)
 const busy = computed(() => (isBusy.value ? state.busy : null))

@@ -19,7 +19,7 @@ module Dn1sup
 
   module ExtManager
     ID      = 'dn1sup_ext_manager'
-    VERSION = '0.6.3'
+    VERSION = '0.7.0'
     REPO    = 'dn1test/dn1sup_ext_manager'
     ASSET   = "#{ID}.rbz"
     PAGE_URL     = "https://github.com/#{REPO}/releases"
@@ -32,7 +32,8 @@ module Dn1sup
     CMD_TOOLTIP  = 'DN1Sup Extension Store — каталог, установка и обновление расширений'
 
     @dialog = nil
-    @release_cache = {}
+    @release_cache = {}   # repo => предлагаемый (новейший стабильный) релиз
+    @releases_cache = {}  # repo => [релизы] — полный список для статусов
 
     module_function
 
@@ -142,6 +143,25 @@ module Dn1sup
       {}
     end
 
+    # Список релизов репозитория (для статусов «обновление / смена версии»).
+    # Успешный список кэшируется и заодно обновляет одиночный кэш предлагаемого
+    # релиза; неудача (пустой список) не кэшируется.
+    def releases_list(repo, force = false)
+      repo_str = repo.to_s
+      if force || !@releases_cache.key?(repo_str)
+        list = Dn1sup::Updater.releases(repo_str)
+        if list.is_a?(Array) && !list.empty?
+          @releases_cache[repo_str] = list
+          offered = Dn1sup::Updater.choose_release(list)
+          @release_cache[repo_str] = offered if offered
+        end
+      end
+      @releases_cache[repo_str] || []
+    rescue StandardError => e
+      Dn1sup::Updater.log_error(e)
+      []
+    end
+
     # ---- Снапшот релизов (офлайн-фоллбэк для версий и changelog'ов) -------
 
     # Путь к снапшоту последних успешных релизов (в temp-каталоге SketchUp).
@@ -152,39 +172,63 @@ module Dn1sup
       nil
     end
 
-    # Сохраняет компактный снапшот успешных релизов (только поля, нужные
-    # каталогу для отображения; установка всегда делает свежий запрос).
+    # Сохраняет компактный снапшот успешных списков релизов. Формат v2:
+    # { "version" => 2, "releases" => { repo => [release, ...] } } — до 10
+    # релизов на репозиторий (статусы и changelog берутся из них; установка
+    # всегда делает свежий запрос).
     def save_release_snapshot
       path = snapshot_path
       return unless path
 
-      data = {}
-      @release_cache.each do |repo, rel|
-        next unless rel.is_a?(Hash) && rel.key?('tag_name')
+      data = { 'version' => 2, 'saved_at' => Time.now.to_i, 'releases' => {} }
+      @releases_cache.each do |repo, list|
+        next unless list.is_a?(Array) && !list.empty?
 
-        data[repo] = {
-          'tag_name'     => rel['tag_name'],
-          'name'         => rel['name'],
-          'body'         => rel['body'],
-          'published_at' => rel['published_at'],
-          'html_url'     => rel['html_url'],
-          'assets'       => (rel['assets'] || []).map do |a|
-            { 'name' => a['name'], 'browser_download_url' => a['browser_download_url'] }
-          end
-        }
+        data['releases'][repo] = list.first(10).map do |rel|
+          {
+            'tag_name'     => rel['tag_name'],
+            'name'         => rel['name'],
+            'body'         => rel['body'],
+            'published_at' => rel['published_at'],
+            'prerelease'   => rel['prerelease'] ? true : false,
+            'html_url'     => rel['html_url'],
+            'assets'       => (rel['assets'] || []).map do |a|
+              { 'name' => a['name'], 'browser_download_url' => a['browser_download_url'] }
+            end
+          }
+        end
       end
       File.write(path, JSON.generate(data))
     rescue StandardError => e
       Dn1sup::Updater.log_error(e)
     end
 
-    # Загружает снапшот в кэш (только если кэш пуст — не затирая свежие данные).
+    # Загружает снапшот в кэши (только если кэш пуст — не затирая свежие
+    # данные). Понимает формат v2 (списки релизов) и старый одиночный (v1:
+    # repo => релиз), который заворачивается в список из одного элемента.
     def load_release_snapshot
       path = snapshot_path
       return unless path && File.file?(path) && @release_cache.empty?
 
       data = JSON.parse(File.read(path))
-      @release_cache = data if data.is_a?(Hash)
+      return unless data.is_a?(Hash)
+
+      if data['releases'].is_a?(Hash)
+        data['releases'].each do |repo, list|
+          next unless list.is_a?(Array) && !list.empty?
+
+          @releases_cache[repo] = list
+          offered = Dn1sup::Updater.choose_release(list)
+          @release_cache[repo] = offered if offered
+        end
+      else
+        data.each do |repo, rel|
+          next unless rel.is_a?(Hash) && rel.key?('tag_name')
+
+          @release_cache[repo] = rel
+          @releases_cache[repo] = [rel]
+        end
+      end
     rescue StandardError => e
       Dn1sup::Updater.log_error(e)
     end
@@ -232,11 +276,13 @@ module Dn1sup
     # check_releases: false — мгновенный оффлайн-сбор из registry.json и локальных плагинов.
     # check_releases: true — с сетевым запросом к GitHub API.
     # releases: опциональный Hash { repo => release_data } для объединения данных.
-    def collect_products_data(force = false, check_releases: false, releases: nil)
+    # release_lists: опциональный Hash { repo => [release, ...] } для статусов.
+    def collect_products_data(force = false, check_releases: false, releases: nil, release_lists: nil)
       entries = load_registry
       return [] if entries.empty?
 
-      rel_map = releases || @release_cache || {}
+      rel_map  = releases || @release_cache || {}
+      list_map = release_lists || @releases_cache || {}
 
       entries.map do |entry|
         id   = entry['id'].to_s
@@ -244,22 +290,26 @@ module Dn1sup
         name = entry['name'].to_s.empty? ? id : entry['name'].to_s
 
         release = check_releases ? latest_release(repo, force) : (rel_map[repo.to_s] || {})
+        rel_list = list_map[repo.to_s].is_a?(Array) ? list_map[repo.to_s] : []
+        offered = Dn1sup::Updater.choose_release(rel_list)
+        offered = release if offered.nil? && release.is_a?(Hash) && release.key?('tag_name')
+
         installed_ver = installed_version(entry)
         is_installed = !installed_ver.to_s.empty?
 
-        latest_tag   = release.is_a?(Hash) ? release['tag_name'].to_s : ''
-        release_body = release.is_a?(Hash) ? release['body'].to_s : ''
-        published_at = release.is_a?(Hash) ? release['published_at'].to_s : ''
-        release_url  = release.is_a?(Hash) ? release['html_url'].to_s : ''
+        latest_tag   = offered ? offered['tag_name'].to_s : ''
+        release_body = offered ? offered['body'].to_s : ''
+        published_at = offered ? offered['published_at'].to_s : ''
+        release_url  = offered ? offered['html_url'].to_s : ''
 
         # Находим .rbz ассет в релизе конкретного репозитория
-        rbz_asset  = find_rbz_asset(release, entry['asset'])
+        rbz_asset  = find_rbz_asset(offered, entry['asset'])
         asset_name = rbz_asset ? rbz_asset['name'].to_s : (entry['asset'] || "#{id}.rbz").to_s
 
         # Описание: из репозитория/релиза или из реестра
         desc = entry['description'].to_s
-        if desc.empty? && release.is_a?(Hash) && !release['name'].to_s.empty? && release['name'] != latest_tag
-          desc = release['name'].to_s
+        if desc.empty? && offered && !offered['name'].to_s.empty? && offered['name'] != latest_tag
+          desc = offered['name'].to_s
         end
 
         # Персональный лог изменений для этого расширения
@@ -268,12 +318,9 @@ module Dn1sup
         # Актуальная версия расширения: из тега релиза репозитория либо из реестра
         ext_target_ver = !latest_tag.empty? ? latest_tag.sub(/\Av/i, '') : entry['version'].to_s
 
-        has_update = false
-        if is_installed && !ext_target_ver.empty?
-          latest_norm    = Dn1sup::Updater.norm_version(ext_target_ver)
-          installed_norm = Dn1sup::Updater.norm_version(installed_ver)
-          has_update     = Dn1sup::Updater.newer?(latest_norm, installed_norm)
-        end
+        # Статус относительно предлагаемого релиза: 'update' / 'switch' / 'current' / nil
+        status = Dn1sup::Updater.product_status(installed_ver, offered, rel_list)
+        has_update = (status == 'update')
 
         {
           'id'                => id,
@@ -285,6 +332,7 @@ module Dn1sup
           'is_installed'      => is_installed,
           'latest_version'    => ext_target_ver.empty? ? '—' : ext_target_ver,
           'has_update'        => has_update,
+          'status'            => status.to_s,
           'changelog'         => changelog,
           'release_url'       => release_url,
           'published_at'      => published_at
@@ -422,33 +470,33 @@ module Dn1sup
       Dn1sup::Updater.log_error(e)
     end
 
-    # Фоновая загрузка релизов и перерисовка каталога. Однократный автоповтор,
-    # если сеть была недоступна в момент первого обхода.
+    # Фоновая загрузка списков релизов и перерисовка каталога. Однократный
+    # автоповтор, если сеть была недоступна в момент первого обхода.
     def fetch_and_render(dlg, repos, force, attempts_left: 0)
       Dn1sup::Updater.defer_async(
         lambda do
           result = {}
           repos.each do |repo|
-            rel = latest_release(repo, force)
-            result[repo] = rel if rel.is_a?(Hash) && rel.key?('tag_name')
+            list = releases_list(repo, force)
+            result[repo] = list unless list.empty?
           end
           result
         end,
-        lambda do |fetched_releases|
+        lambda do |fetched_lists|
           next unless @dialog
 
-          fetched = fetched_releases.to_h
+          fetched = fetched_lists.to_h
           store_debug("релизы получены #{fetched.size}/#{repos.size}" \
                       "#{fetched.size < repos.size && attempts_left == 0 ? ' (часть недоступна)' : ''}")
           if fetched.is_a?(Hash) && fetched.any?
-            @release_cache.merge!(fetched_releases)
+            @releases_cache.merge!(fetched)
             save_release_snapshot
-            push_state(dlg, collect_products_data(false, check_releases: false, releases: @release_cache))
+            push_state(dlg, collect_products_data(false, check_releases: false))
           end
 
-          missing = repos.size - fetched_releases.to_h.size
+          missing = repos.size - fetched.size
           if attempts_left > 0 && missing > 0
-            fetch_and_render(dlg, repos - fetched_releases.to_h.keys, force, attempts_left: attempts_left - 1)
+            fetch_and_render(dlg, repos - fetched.keys, force, attempts_left: attempts_left - 1)
           end
         end
       )

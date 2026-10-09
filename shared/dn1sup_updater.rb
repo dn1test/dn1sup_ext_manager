@@ -7,6 +7,7 @@ rescue LoadError
 end
 require 'net/http'
 require 'uri'
+require 'time'
 
 # Dn1sup::Updater — общий модуль автообновления через GitHub Releases.
 #
@@ -101,6 +102,27 @@ module Dn1sup
       {}
     end
 
+    # GET https://api.github.com/repos/{owner}/{repo}/releases?per_page=N
+    # Возвращает Array JSON-объектов (новые раньше старых) или [] при любой
+    # ошибке (сеть, лимиты и т.п.).
+    def releases(repo, per_page: 20)
+      require 'net/http'
+      require 'json'
+      uri = URI.parse("#{GITHUB_API}/repos/#{repo}/releases?per_page=#{per_page.to_i}")
+      res = http_get(uri)
+      unless res.is_a?(Net::HTTPSuccess)
+        log_debug("releases(#{repo}): HTTP #{res.respond_to?(:code) ? res.code : '?'}")
+        return []
+      end
+      json = JSON.parse(res.body)
+      list = json.is_a?(Array) ? json : []
+      log_debug("releases(#{repo}): OK #{list.size} релизов")
+      list
+    rescue StandardError, ScriptError => e
+      log_error(e)
+      []
+    end
+
     # Скачивает произвольный URL в файл. Возвращает путь или nil.
     def download(url, dest_path)
       require 'net/http'
@@ -189,6 +211,51 @@ module Dn1sup
         return false if x < y
       end
       false
+    end
+
+    # Время публикации релиза; неизвестное/битое — начало эпохи («самое старое»).
+    def release_time(release)
+      t = Time.parse(release['published_at'].to_s)
+      t || Time.at(0)
+    rescue StandardError, ArgumentError
+      Time.at(0)
+    end
+
+    # Новейший стабильный релиз списка (без draft/prerelease) по дате публикации.
+    # /releases/latest у GitHub возвращает последний ОПУБЛИКОВАННЫЙ релиз, поэтому
+    # после нестандартной публикации (напр. 0.4.1 поверх серии 2.4.x) «latest»
+    # может оказаться ниже установленной версии — предлагаемый релиз выбираем
+    # сами из полного списка.
+    def choose_release(list)
+      stable = list.to_a.find_all do |r|
+        r.is_a?(Hash) && !r['tag_name'].to_s.empty? && !r['draft'] && !r['prerelease']
+      end
+      stable.max_by { |r| release_time(r) }
+    end
+
+    # Статус установленной версии относительно предлагаемого (новейшего по дате)
+    # релиза:
+    #   'update'  — предлагаемый релиз новее по номеру версии;
+    #   'switch'  — релиз новее по ДАТЕ публикации, но ниже по номеру (смена
+    #               схемы нумерации, напр. 2.4.1 -> 0.4.1): предлагаем установку,
+    #               только если релиз установленной версии найден в списке и
+    #               старее по дате (иначе молча считаем версию актуальной);
+    #   'current' — версии совпадают;
+    #   nil       — нет данных (релизы недоступны или расширение не установлено).
+    def product_status(installed_ver, offered, list = nil)
+      return nil if installed_ver.to_s.empty? || offered.nil? || offered['tag_name'].to_s.empty?
+
+      tag  = offered['tag_name'].to_s.sub(/\Av/i, '')
+      inst = installed_ver.to_s.sub(/\Av/i, '')
+      return 'current' if tag == inst
+      return 'update'  if newer?(norm_version(tag), norm_version(inst))
+
+      inst_release = list.to_a.find do |r|
+        r.is_a?(Hash) && r['tag_name'].to_s.sub(/\Av/i, '') == inst
+      end
+      return nil unless inst_release
+
+      release_time(offered) > release_time(inst_release) ? 'switch' : nil
     end
 
     # Установка .rbz с любого URL через официальный Sketchup.install_from_archive.

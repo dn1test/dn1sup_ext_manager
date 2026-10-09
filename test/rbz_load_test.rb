@@ -142,8 +142,14 @@ end
 
 # --- Ожидания по пакетам ------------------------------------------------------
 
+# Версия сверяется с registry.json (tools/pack.rb обновляет его из лоадера),
+# чтобы тест не приходилось править при каждом релизе.
+require 'json'
+REGISTRY_VERSIONS = JSON.parse(File.read(File.expand_path('../registry.json', __dir__)))
+                         .each_with_object({}) { |e, h| h[e['id']] = e['version'] }
+
 EXPECTED = {
-  'dn1sup_ext_manager' => ['Dn1sup::ExtManager::VERSION', '0.6.2']
+  'dn1sup_ext_manager' => ['Dn1sup::ExtManager::VERSION', REGISTRY_VERSIONS['dn1sup_ext_manager']]
 }.freeze
 
 def const_value(path)

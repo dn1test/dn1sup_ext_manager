@@ -193,14 +193,14 @@ const tabs = computed(() => [
 const counts = computed(() => ({
   all: state.products.length,
   installed: state.products.filter(p => p.is_installed).length,
-  updates: state.products.filter(p => p.has_update).length
+  updates: state.products.filter(p => p.has_update || p.status === 'switch').length
 }))
 
 const filteredProducts = computed(() => {
   const q = searchQuery.value.trim().toLowerCase()
   return state.products.filter(p => {
     if (filter.value === 'installed' && !p.is_installed) return false
-    if (filter.value === 'updates' && !p.has_update) return false
+    if (filter.value === 'updates' && !(p.has_update || p.status === 'switch')) return false
     if (q) {
       const matchName = (p.name || '').toLowerCase().includes(q)
       const matchId = (p.id || '').toLowerCase().includes(q)
