@@ -1,17 +1,24 @@
 import { computed } from 'vue'
-import { Circle, Zap, CircleCheck, ArrowLeftRight } from 'lucide-vue-next'
+import { Circle, Zap, CircleCheck, ArrowLeftRight, CircleAlert } from 'lucide-vue-next'
 
 // p.status приходит из Ruby (Dn1sup::Updater.product_status):
 //   'update'  — есть релиз новее по номеру версии;
 //   'switch'  — релиз новее по дате, но ниже по номеру (смена схемы нумерации);
 //   'current' — установлена актуальная версия;
 //   ''        — нет данных / не установлено.
+// p.repo_status ('gone'|'renamed') — репозиторий расширения удалён или
+// перемещён на GitHub: обновление/установка невозможны, карточка остаётся
+// только у установленных.
 const isUpdate = (p) => p.has_update || p.status === 'update'
 const isSwitch = (p) => !!p.is_installed && p.status === 'switch'
+const isRepoGone = (p) => !!p.is_installed && p.repo_status === 'gone'
+const isRepoMoved = (p) => !!p.is_installed && p.repo_status === 'renamed'
 
 export function useProductStatus(productRef) {
   const statusText = computed(() => {
     const p = productRef.value
+    if (isRepoGone(p)) return 'Репозиторий недоступен'
+    if (isRepoMoved(p)) return 'Репозиторий перемещён'
     if (!p.is_installed) return 'Не установлено'
     if (isUpdate(p)) return 'Обновление'
     if (isSwitch(p)) return 'Смена версии'
@@ -20,6 +27,9 @@ export function useProductStatus(productRef) {
 
   const statusCls = computed(() => {
     const p = productRef.value
+    if (isRepoGone(p) || isRepoMoved(p)) {
+      return 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700'
+    }
     if (!p.is_installed) {
       return 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700'
     }
@@ -34,6 +44,7 @@ export function useProductStatus(productRef) {
 
   const statusIcon = computed(() => {
     const p = productRef.value
+    if (isRepoGone(p) || isRepoMoved(p)) return CircleAlert
     if (!p.is_installed) return Circle
     if (isUpdate(p)) return Zap
     if (isSwitch(p)) return ArrowLeftRight
@@ -44,6 +55,7 @@ export function useProductStatus(productRef) {
     const p = productRef.value
     const inst = p.installed_version
     const latest = p.latest_version
+    if ((isRepoGone(p) || isRepoMoved(p)) && inst) return `Версия: v${inst}`
     if ((isUpdate(p) || isSwitch(p)) && inst) return `Версия: v${inst} → v${latest}`
     if (p.is_installed && inst) return `Версия: v${inst}`
     return `Доступно: v${latest || '—'}`
@@ -56,7 +68,9 @@ export function useProductStatus(productRef) {
       inst ? `установлена: v${inst}` : null,
       p.latest_version ? `доступна: v${p.latest_version}` : null,
       p.published_at ? `релиз: ${p.published_at}` : null,
-      isSwitch(p) ? 'релиз новее по дате публикации, но ниже по номеру (смена схемы нумерации)' : null
+      isSwitch(p) ? 'релиз новее по дате публикации, но ниже по номеру (смена схемы нумерации)' : null,
+      isRepoGone(p) ? 'репозиторий удалён на GitHub — обновление недоступно' : null,
+      isRepoMoved(p) ? `репозиторий перемещён${p.repo ? `: ${p.repo}` : ''} — обновление недоступно` : null
     ].filter(Boolean).join(' · ')
   })
 

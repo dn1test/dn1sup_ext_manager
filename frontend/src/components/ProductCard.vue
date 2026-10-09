@@ -79,7 +79,7 @@
             Установить
           </button>
           <button
-            v-else-if="p.is_installed"
+            v-else-if="p.is_installed && !p.repo_status"
             class="es-btn-ghost !h-[30px] !px-2.5 !text-xs"
             title="Переустановить текущую версию"
             @click="install(p.id, 'Переустановка…')"

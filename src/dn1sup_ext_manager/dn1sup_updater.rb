@@ -148,6 +148,38 @@ module Dn1sup
       []
     end
 
+    # Статус репозитория на GitHub: существует, удалён или переименован
+    # (для чистки каталога от «мёртвых» записей).
+    # GET /repos/{owner}/{repo}: редиректы переименованных репозиториев
+    # http_get проходит сам, поэтому итоговое full_name сравнивается с
+    # запрошенным именем. Возвращает:
+    #   { exists: true,  repo: 'owner/name', renamed: true/false }
+    #   { exists: false }                     — HTTP 404 (репозиторий удалён)
+    #   nil                                   — сеть/лимиты: статус неизвестен
+    def repo_meta(repo)
+      require 'net/http'
+      require 'json'
+      repo = repo.to_s
+      uri = URI.parse("#{GITHUB_API}/repos/#{repo}")
+      res = http_get(uri)
+      unless res.is_a?(Net::HTTPSuccess)
+        log_debug("repo_meta(#{repo}): HTTP #{res.respond_to?(:code) ? res.code : '?'}")
+        return { exists: false } if res.respond_to?(:code) && res.code.to_i == 404
+
+        return nil
+      end
+      json = JSON.parse(res.body)
+      full = json.is_a?(Hash) ? json['full_name'].to_s : ''
+      return nil if full.empty?
+
+      renamed = !full.casecmp?(repo)
+      log_debug("repo_meta(#{repo}): OK#{renamed ? " -> #{full}" : ''}")
+      { exists: true, repo: renamed ? full : repo, renamed: renamed }
+    rescue StandardError, ScriptError => e
+      log_error(e)
+      nil
+    end
+
     # Лог правок между двумя тегами: первые строки сообщений коммитов.
     # GET /repos/{repo}/compare/{base}...{head}. Возвращает Array строк
     # (до limit) или [] при любой ошибке (тега нет, сеть и т.п.).

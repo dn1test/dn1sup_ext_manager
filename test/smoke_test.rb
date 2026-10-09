@@ -179,6 +179,14 @@ assert 'fetch_text raw.githubusercontent', ok
 bad = Dn1sup::Updater.latest_release('nonexistent-user-000/nonexistent-repo-999')
 assert '404 -> {} (устойчивость)', bad == {}
 
+# 7b. repo_meta: живой репозиторий существует, несуществующий — 404
+live_meta = Dn1sup::Updater.repo_meta('dn1test/dn1sup_ext_manager')
+assert 'repo_meta: живой репозиторий — exists без renamed',
+       live_meta.is_a?(Hash) && live_meta[:exists] == true && live_meta[:renamed] == false &&
+       live_meta[:repo] == 'dn1test/dn1sup_ext_manager', live_meta.inspect
+gone_meta = Dn1sup::Updater.repo_meta('nonexistent-user-000/nonexistent-repo-999')
+assert 'repo_meta: 404 -> exists: false', gone_meta == { exists: false }, gone_meta.inspect
+
 # 8. Псевдоним log_last_error
 assert 'log_last_error доступен', Dn1sup::Updater.respond_to?(:log_last_error)
 
@@ -346,6 +354,136 @@ ensure
   Dn1sup::ExtManager.instance_variable_set(:@release_cache, {})
   Dn1sup::ExtManager.instance_variable_set(:@releases_cache, {})
   Dn1sup::ExtManager.unhide_all_repos
+end
+
+# 13c. Мёртвые/переименованные репозитории: repo_meta (офлайн, с подменой
+# http_get), apply_repo_status, фильтрация карточек, снапшот v4.
+# Живые проверки repo_meta — в секции 7b.
+begin
+  # --- repo_meta с подменой http_get --------------------------------------
+  # body= у Net::HTTPResponse вне блока request бросает IOError — заполняем ivar'ы
+  resp200 = lambda do |full_name|
+    r = Net::HTTPSuccess.new('1.1', '200', 'OK')
+    r.instance_variable_set(:@body, JSON.generate('full_name' => full_name))
+    r.instance_variable_set(:@read, true)
+    r
+  end
+  resp404 = Net::HTTPNotFound.new('1.1', '404', 'Not Found')
+  orig_http_get = Dn1sup::Updater.method(:http_get)
+  Dn1sup::Updater.define_singleton_method(:http_get) { |_uri_or_str, _redirects = 5| $stub_http_response }
+
+  $stub_http_response = resp200.call('dn1test/dn1sup_time_project')
+  m = Dn1sup::Updater.repo_meta('dn1test/dn1sup_time_project')
+  assert 'repo_meta: жив, имя совпадает', m == { exists: true, repo: 'dn1test/dn1sup_time_project', renamed: false }, m.inspect
+
+  $stub_http_response = resp200.call('dn1test/dn1sup_new_name')
+  m = Dn1sup::Updater.repo_meta('dn1test/dn1sup_old_name')
+  assert 'repo_meta: переименован — новое имя и renamed',
+         m == { exists: true, repo: 'dn1test/dn1sup_new_name', renamed: true }, m.inspect
+
+  $stub_http_response = resp404
+  assert 'repo_meta: 404 -> exists: false', Dn1sup::Updater.repo_meta('dn1test/dn1sup_old_name') == { exists: false }
+
+  Dn1sup::Updater.define_singleton_method(:http_get) { |_u, _r = 5| raise Errno::ECONNREFUSED }
+  assert 'repo_meta: сетевая ошибка -> nil (статус неизвестен)', Dn1sup::Updater.repo_meta('dn1test/x').nil?
+ensure
+  Dn1sup::Updater.define_singleton_method(:http_get, orig_http_get)
+end
+
+begin
+  # --- apply_repo_status и фильтрация карточек ----------------------------
+  Dn1sup::ExtManager.instance_variable_set(:@discovered_entries, [discovered_fixture[0].dup])
+  Dn1sup::ExtManager.instance_variable_set(
+    :@releases_cache,
+    { 'dn1test/dn1sup_dummy_found' => [{ 'tag_name' => 'v0.1.0', 'published_at' => '2026-10-01T00:00:00Z', 'assets' => [] }] }
+  )
+  # save_settings считаем установленным: карточка с мёртвым репо должна
+  # остаться в каталоге с пометкой
+  Sketchup.write_default('DN1Sup ExtManager', 'installed_dn1sup_save_settings', '1.0.0')
+
+  Dn1sup::ExtManager.apply_repo_status(
+    'dn1test/dn1sup_dummy_found'   => { exists: false },
+    'dn1test/dn1sup_save_settings' => { exists: true, repo: 'dn1test/dn1sup_save_settings_new', renamed: true },
+    'dn1test/dn1sup_ext_manager'   => { exists: true, repo: 'dn1test/dn1sup_ext_manager', renamed: false },
+    'dn1test/unreachable'          => nil
+  )
+  stale_map = Dn1sup::ExtManager.instance_variable_get(:@stale_repos)
+  assert 'apply: удалённый помечен gone', stale_map['dn1test/dn1sup_dummy_found']['status'] == 'gone'
+  assert 'apply: переименованный помечен с новым именем',
+         stale_map['dn1test/dn1sup_save_settings']['status'] == 'renamed' &&
+         stale_map['dn1test/dn1sup_save_settings']['renamed_to'] == 'dn1test/dn1sup_save_settings_new'
+  assert 'apply: живой репозиторий — ok', stale_map['dn1test/dn1sup_ext_manager']['status'] == 'ok'
+  assert 'apply: сеть (nil) — без пометки', stale_map['dn1test/unreachable'].nil?
+  assert 'apply: stale? видит мёртвые',
+         Dn1sup::ExtManager.stale?('dn1test/dn1sup_dummy_found') &&
+         Dn1sup::ExtManager.stale?('dn1test/dn1sup_save_settings')
+  assert 'apply: живой не stale', !Dn1sup::ExtManager.stale?('dn1test/dn1sup_ext_manager')
+  assert 'apply: кэш релизов мёртвого почищен',
+         Dn1sup::ExtManager.instance_variable_get(:@releases_cache).none? { |repo, _| repo == 'dn1test/dn1sup_dummy_found' }
+  assert 'apply: найденная запись мёртвого удалена',
+         Dn1sup::ExtManager.instance_variable_get(:@discovered_entries).none? { |e| e['repo'] == 'dn1test/dn1sup_dummy_found' }
+
+  products = Dn1sup::ExtManager.collect_products_data(false, check_releases: false)
+  assert 'collect: неустановленное с мёртвым репо скрыто', products.none? { |p| p['id'] == 'dn1sup_dummy_found' }
+  ss = products.find { |p| p['id'] == 'dn1sup_save_settings' }
+  assert 'collect: установленное с переименованным репо осталось с пометкой',
+         !!ss && ss['repo_status'] == 'renamed' && ss['is_installed'] == true && ss['has_update'] == false,
+         ss&.slice('repo_status', 'has_update').inspect
+  em = products.find { |p| p['id'] == 'dn1sup_ext_manager' }
+  assert 'collect: живое расширение без пометки', !!em && em['repo_status'].to_s.empty?
+
+  res = Dn1sup::ExtManager.perform_install('dn1sup_save_settings')
+  assert 'install: мёртвый репо отклонён без сети', res['ok'] == false && res['error'].to_s.include?('недоступен'), res.inspect
+
+  Dn1sup::ExtManager.apply_repo_status(
+    'dn1test/dn1sup_save_settings' => { exists: true, repo: 'dn1test/dn1sup_save_settings', renamed: false }
+  )
+  assert 'apply: вернувшийся репозиторий перестаёт быть stale', !Dn1sup::ExtManager.stale?('dn1test/dn1sup_save_settings')
+ensure
+  Dn1sup::ExtManager.instance_variable_set(:@stale_repos, {})
+  Dn1sup::ExtManager.instance_variable_set(:@discovered_entries, [])
+  Dn1sup::ExtManager.instance_variable_set(:@release_cache, {})
+  Dn1sup::ExtManager.instance_variable_set(:@releases_cache, {})
+  Dn1sup::ExtManager.instance_variable_set(:@commits_cache, {})
+  Sketchup.write_default('DN1Sup ExtManager', 'installed_dn1sup_save_settings', nil)
+end
+
+begin
+  # --- снапшот v4: статусы репозиториев переживают перезапуск -------------
+  Dn1sup::ExtManager.instance_variable_set(
+    :@stale_repos,
+    { 'dn1test/dn1sup_dummy_found' => { 'status' => 'gone', 'renamed_to' => '', 'checked_at' => 1_700_000_000 } }
+  )
+  Dn1sup::ExtManager.save_release_snapshot
+  data = JSON.parse(File.read(Dn1sup::ExtManager.snapshot_path))
+  assert 'снапшот v4: версия и поле stale',
+         data['version'] == 4 && data['stale'].is_a?(Hash) &&
+         data['stale']['dn1test/dn1sup_dummy_found']['status'] == 'gone', "version=#{data['version']}"
+
+  Dn1sup::ExtManager.instance_variable_set(:@stale_repos, {})
+  Dn1sup::ExtManager.instance_variable_set(:@release_cache, {})
+  Dn1sup::ExtManager.instance_variable_set(:@releases_cache, {})
+  Dn1sup::ExtManager.load_release_snapshot
+  assert 'снапшот v4: stale восстановлен',
+         Dn1sup::ExtManager.instance_variable_get(:@stale_repos)['dn1test/dn1sup_dummy_found']['status'] == 'gone'
+
+  # Старый формат v3 (без stale) читается, stale остаётся пустым
+  data.delete('stale')
+  data['version'] = 3
+  File.write(Dn1sup::ExtManager.snapshot_path, JSON.generate(data))
+  Dn1sup::ExtManager.instance_variable_set(:@stale_repos, {})
+  Dn1sup::ExtManager.instance_variable_set(:@release_cache, {})
+  Dn1sup::ExtManager.instance_variable_set(:@releases_cache, {})
+  Dn1sup::ExtManager.load_release_snapshot
+  assert 'снапшот v3 без stale читается',
+         Dn1sup::ExtManager.instance_variable_get(:@stale_repos).empty? &&
+         Dn1sup::ExtManager.instance_variable_get(:@releases_cache).is_a?(Hash)
+ensure
+  Dn1sup::ExtManager.instance_variable_set(:@stale_repos, {})
+  Dn1sup::ExtManager.instance_variable_set(:@release_cache, {})
+  Dn1sup::ExtManager.instance_variable_set(:@releases_cache, {})
+  Dn1sup::ExtManager.instance_variable_set(:@discovered_entries, [])
+  Dn1sup::ExtManager.instance_variable_set(:@commits_cache, {})
 end
 
 # 14. Уровни логирования: краткий прикладной лог + [DEBUG] только при флаге debug

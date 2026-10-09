@@ -19,7 +19,7 @@ module Dn1sup
 
   module ExtManager
     ID      = 'dn1sup_ext_manager'
-    VERSION = '0.9.0'
+    VERSION = '0.10.0'
     REPO    = 'dn1test/dn1sup_ext_manager'
     ASSET   = "#{ID}.rbz"
     PAGE_URL     = "https://github.com/#{REPO}/releases"
@@ -43,6 +43,11 @@ module Dn1sup
     @releases_cache = {}  # repo => [релизы] — полный список для статусов
     @discovered_entries = [] # найденные на GitHub расширения вне registry.json
     @commits_cache = {}   # repo => {'installed'=>..,'offered'=>..,'messages'=>[...]}
+    # Результаты проверки существования репозиториев на GitHub:
+    # repo => {'status'=>'ok'|'gone'|'renamed','renamed_to'=>'','checked_at'=>unixtime}.
+    # gone/renamed — карточки убираются из установки/обновлений (установленные
+    # остаются с пометкой), 'ok' — репозиторий жив (в т.ч. пересоздан).
+    @stale_repos = {}
 
     module_function
 
@@ -134,6 +139,20 @@ module Dn1sup
       merged_entries.find { |e| e['id'].to_s == id.to_s }
     end
 
+    # Репозиторий удалён или переименован на GitHub (по данным repo_meta).
+    def stale?(repo)
+      info = @stale_repos[repo.to_s]
+      info.is_a?(Hash) && %w[gone renamed].include?(info['status'].to_s)
+    rescue StandardError
+      false
+    end
+
+    # Статус stale-репозитория: 'gone' / 'renamed' / '' (жив или не проверялся).
+    def stale_status(repo)
+      info = @stale_repos[repo.to_s]
+      info.is_a?(Hash) ? info['status'].to_s : ''
+    end
+
     # Пора ли сканировать GitHub: принудительно по кнопке либо не чаще раза
     # в сутки (pref last_discovery).
     def discovery_due?(force)
@@ -152,6 +171,62 @@ module Dn1sup
       Sketchup.write_default('DN1Sup ExtManager', 'last_discovery', Time.now.to_i)
     rescue StandardError
       nil
+    end
+
+    # Записывает результат проверки репозитория (главный поток).
+    # gone/renamed: чистятся кэши релизов/коммитов и найденные записи
+    # репозитория — карточки собираются заново уже без них (установленные
+    # остаются с пометкой repo_status). Возвращает true, если статус изменился.
+    def mark_stale_repo(repo, mark)
+      repo_str = repo.to_s
+      prev = @stale_repos[repo_str].is_a?(Hash) ? @stale_repos[repo_str]['status'].to_s : ''
+      @stale_repos[repo_str] = mark
+      status = mark['status'].to_s
+      return false unless %w[gone renamed].include?(status)
+
+      if status != prev
+        store_log(case status
+                  when 'gone'
+                    "репозиторий #{repo_str} недоступен на GitHub (удалён) — убран из каталога"
+                  else
+                    "репозиторий #{repo_str} переименован в #{mark['renamed_to']} — запись каталога обновляется"
+                  end)
+      end
+      @release_cache.delete(repo_str)
+      @releases_cache.delete(repo_str)
+      @commits_cache.delete(repo_str)
+      @discovered_entries.reject! { |e| e.is_a?(Hash) && e['repo'].to_s == repo_str }
+      status != prev
+    rescue StandardError => e
+      Dn1sup::Updater.log_error(e)
+      false
+    end
+
+    # Применяет результаты проверки репозиториев из фоновой загрузки
+    # (Hash { repo => результат Dn1sup::Updater.repo_meta }). Результат nil
+    # (сеть/лимиты) ничего не меняет: прежняя пометка сохраняется.
+    def apply_repo_status(updates)
+      return unless updates.is_a?(Hash)
+
+      now = Time.now.to_i
+      updates.each do |repo, meta|
+        repo_str = repo.to_s
+        next if repo_str.empty? || !meta.is_a?(Hash)
+
+        mark =
+          if meta[:exists]
+            if meta[:renamed]
+              { 'status' => 'renamed', 'renamed_to' => meta[:repo].to_s, 'checked_at' => now }
+            else
+              { 'status' => 'ok', 'renamed_to' => '', 'checked_at' => now }
+            end
+          else
+            { 'status' => 'gone', 'renamed_to' => '', 'checked_at' => now }
+          end
+        mark_stale_repo(repo_str, mark)
+      end
+    rescue StandardError => e
+      Dn1sup::Updater.log_error(e)
     end
 
     # Скан репозиториев dn1sup_* аккаунта OWNER, отсутствующих в registry.json.
@@ -291,9 +366,10 @@ module Dn1sup
     end
 
     # Сохраняет компактный снапшот успешных списков релизов, найденных
-    # расширений и логов правок. Формат v3:
-    # { "version" => 3, "releases" => { repo => [release, ...] },
-    #   "discovered" => [entry, ...], "commits" => { repo => {...} } } —
+    # расширений, логов правок и статусов репозиториев. Формат v4:
+    # { "version" => 4, "releases" => { repo => [release, ...] },
+    #   "discovered" => [entry, ...], "commits" => { repo => {...} },
+    #   "stale" => { repo => {'status'=>..,'renamed_to'=>..,'checked_at'=>..} } } —
     # до 10 релизов на репозиторий (статусы и changelog берутся из них;
     # установка всегда делает свежий запрос).
     def save_release_snapshot
@@ -301,11 +377,12 @@ module Dn1sup
       return unless path
 
       data = {
-        'version'    => 3,
+        'version'    => 4,
         'saved_at'   => Time.now.to_i,
         'releases'   => {},
         'discovered' => @discovered_entries,
-        'commits'    => @commits_cache
+        'commits'    => @commits_cache,
+        'stale'      => @stale_repos
       }
       @releases_cache.each do |repo, list|
         next unless list.is_a?(Array) && !list.empty?
@@ -330,9 +407,9 @@ module Dn1sup
     end
 
     # Загружает снапшот в кэши (только если кэш пуст — не затирая свежие
-    # данные). Понимает формат v3 (списки релизов + найденные + коммиты) и
-    # старые: v2 (списки релизов) и v1 (repo => релиз, заворачивается в
-    # список из одного элемента).
+    # данные). Понимает формат v4 (v3 + статусы репозиториев) и старые:
+    # v3 (списки релизов + найденные + коммиты), v2 (списки релизов) и
+    # v1 (repo => релиз, заворачивается в список из одного элемента).
     def load_release_snapshot
       path = snapshot_path
       return unless path && File.file?(path) && @release_cache.empty?
@@ -347,6 +424,17 @@ module Dn1sup
       end
       if data['commits'].is_a?(Hash) && @commits_cache.empty?
         @commits_cache = data['commits']
+      end
+      if data['stale'].is_a?(Hash) && @stale_repos.empty?
+        data['stale'].each do |repo, info|
+          next unless info.is_a?(Hash) && %w[ok gone renamed].include?(info['status'].to_s)
+
+          @stale_repos[repo.to_s] = {
+            'status'     => info['status'].to_s,
+            'renamed_to' => info['renamed_to'].to_s,
+            'checked_at' => info['checked_at'].to_i
+          }
+        end
       end
 
       if data['releases'].is_a?(Hash)
@@ -425,8 +513,17 @@ module Dn1sup
         repo = entry['repo'].to_s
         name = entry['name'].to_s.empty? ? id : entry['name'].to_s
 
-        release = check_releases ? latest_release(repo, force) : (rel_map[repo.to_s] || {})
-        rel_list = list_map[repo.to_s].is_a?(Array) ? list_map[repo.to_s] : []
+        # Репозиторий удалён/переименован: кэши релизов игнорируем (релизы
+        # нового репозитория по ключу старого показывали бы ложное обновление),
+        # сетевые запросы по старому имени не тратятся.
+        repo_stale = stale?(repo)
+        if repo_stale
+          release = {}
+          rel_list = []
+        else
+          release = check_releases ? latest_release(repo, force) : (rel_map[repo.to_s] || {})
+          rel_list = list_map[repo.to_s].is_a?(Array) ? list_map[repo.to_s] : []
+        end
 
         # Найденные на GitHub расширения показываем, только когда известны
         # их релизы: без них нельзя ни версию показать, ни .rbz установить.
@@ -437,6 +534,10 @@ module Dn1sup
 
         installed_ver = installed_version(entry)
         is_installed = !installed_ver.to_s.empty?
+
+        # Мёртвый репозиторий: неустановленные карточки исчезают из каталога
+        # (и из вкладки «Обновления»), установленные остаются с пометкой.
+        next nil if repo_stale && !is_installed
 
         latest_tag   = offered ? offered['tag_name'].to_s : ''
         release_body = offered ? offered['body'].to_s : ''
@@ -481,6 +582,7 @@ module Dn1sup
           'repo'              => repo,
           'asset'             => asset_name,
           'discovered'        => !!entry['discovered'],
+          'repo_status'       => repo_stale ? stale_status(repo) : '',
           'installed_version' => installed_ver,
           'is_installed'      => is_installed,
           'latest_version'    => ext_target_ver.empty? ? '—' : ext_target_ver,
@@ -509,6 +611,13 @@ module Dn1sup
 
       repo = entry['repo'].to_s
       name = entry['name'].to_s.empty? ? id : entry['name'].to_s
+
+      if stale?(repo)
+        store_log("установка '#{id}': репозиторий #{repo} недоступен (удалён или переименован)")
+        return { 'ok' => false,
+                 'error' => "#{name}: репозиторий #{repo} недоступен на GitHub (удалён или переименован)." }
+      end
+
       release = latest_release(repo, true)
       unless release.is_a?(Hash) && release.key?('tag_name')
         store_log("установка '#{id}': релизы #{repo} недоступны")
@@ -633,12 +742,33 @@ module Dn1sup
       want_discovery = discovery_due?(force)
       Dn1sup::Updater.defer_async(
         lambda do
-          result = { 'releases' => {}, 'discovered' => nil }
+          result = { 'releases' => {}, 'discovered' => nil, 'stale' => {} }
+          now = Time.now.to_i
           repos.each do |repo|
-            list = releases_list(repo, force)
-            result['releases'][repo] = list unless list.empty?
+            repo_str = repo.to_s
+            next if repo_str.empty?
+
+            # Существование репозитория проверяем не чаще раза в сутки
+            # (кнопка «Обновить» — force — проверяет всегда).
+            info = @stale_repos[repo_str]
+            meta = nil
+            if force || !info.is_a?(Hash) || (now - info['checked_at'].to_i) >= DISCOVERY_INTERVAL
+              meta = Dn1sup::Updater.repo_meta(repo_str)
+              result['stale'][repo_str] = meta
+            end
+            dead = meta.is_a?(Hash) ? (meta[:exists] == false || meta[:renamed]) : stale?(repo_str)
+            # Мёртвый/перемещённый репозиторий на релизы не опрашиваем:
+            # редирект переименования вернул бы релизы нового репозитория
+            # под старым именем.
+            next if dead
+
+            list = releases_list(repo_str, force)
+            result['releases'][repo_str] = list unless list.empty?
           end
-          result['discovered'] = discover_repos if want_discovery
+          renamed_found = result['stale'].values.any? { |m| m.is_a?(Hash) && m[:renamed] }
+          # Переименование обнаружено вне окна автопоиска — новый репозиторий
+          # ищем сразу, не дожидаясь следующего суточного скана.
+          result['discovered'] = discover_repos if want_discovery || renamed_found
           result
         end,
         lambda do |fetched_raw|
@@ -649,6 +779,11 @@ module Dn1sup
           store_debug("релизы получены #{lists.size}/#{repos.size}" \
                       "#{lists.size < repos.size && attempts_left == 0 ? ' (часть недоступна)' : ''}")
 
+          # Пометки удалённых/переименованных применяем ДО слияния релизов и
+          # найденного: они чистят кэши и @discovered_entries под эти репозитории.
+          apply_repo_status(fetched['stale'])
+
+          added_repos = []
           new_entries = fetched['discovered']
           if new_entries.is_a?(Array)
             known = {}
@@ -660,6 +795,7 @@ module Dn1sup
             @discovered_entries.concat(added) unless added.empty?
             mark_discovered
             store_debug("автопоиск: новых расширений #{added.size}") unless added.empty?
+            added_repos = added.map { |e| e['repo'].to_s }.reject(&:empty?)
           end
 
           if lists.is_a?(Hash) && lists.any?
@@ -671,6 +807,11 @@ module Dn1sup
           missing = repos.size - lists.size
           if attempts_left > 0 && missing > 0
             fetch_and_render(dlg, repos - lists.keys, force, attempts_left: attempts_left - 1)
+          elsif added_repos.any?
+            # Новонайденные расширения (в т.ч. на новом имени после
+            # переименования) подтягивают релизы сразу, иначе карточки
+            # появятся только при следующем открытии каталога.
+            fetch_and_render(dlg, added_repos, force, attempts_left: 0)
           else
             fetch_commits_async(dlg)
           end
