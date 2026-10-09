@@ -288,30 +288,45 @@ module Dn1sup
     # Статус установленной версии относительно предлагаемого (новейшего по дате)
     # релиза:
     #   'update'  — предлагаемый релиз новее по номеру версии;
-    #   'switch'  — релиз новее по ДАТЕ публикации, но ниже по номеру (смена
-    #               схемы нумерации, напр. 2.4.1 -> 0.4.1): предлагаем установку,
-    #               только если релиз установленной версии найден в списке и
-    #               старее по дате (иначе молча считаем версию актуальной);
+    #   'switch'  — релиз новее по ДАТЕ публикации, но не выше по номеру (смена
+    #               схемы нумерации, напр. 2.4.1 -> 0.4.1, либо переизпуск той
+    #               же версии): предлагаем установку, если дата установленной
+    #               сборки определена — по релизу из списка, а при его
+    #               отсутствии по дате установки (installed_at, unixtime);
     #   'current' — версии совпадают;
     #   nil       — нет данных (релизы недоступны или расширение не установлено).
-    def product_status(installed_ver, offered, list = nil)
+    def product_status(installed_ver, offered, list = nil, installed_at: nil)
       return nil if installed_ver.to_s.empty? || offered.nil? || offered['tag_name'].to_s.empty?
 
       tag  = offered['tag_name'].to_s.sub(/\Av/i, '')
       inst = installed_ver.to_s.sub(/\Av/i, '')
-      return 'current' if tag == inst
+      if tag == inst
+        # Переизпуск той же версии: релиз опубликован позже установленной сборки.
+        return 'switch' if installed_at.to_i > 0 && release_time(offered).to_i > installed_at.to_i
+
+        return 'current'
+      end
       return 'update'  if newer?(norm_version(tag), norm_version(inst))
 
       inst_release = list.to_a.find do |r|
         r.is_a?(Hash) && r['tag_name'].to_s.sub(/\Av/i, '') == inst
       end
-      return nil unless inst_release
+      if inst_release
+        return release_time(offered) > release_time(inst_release) ? 'switch' : nil
+      end
 
-      release_time(offered) > release_time(inst_release) ? 'switch' : nil
+      # Релиз установленной версии не найден в списке (снапшот хранит лишь
+      # последние 10, установка давно) — fallback на дату установки.
+      return nil unless installed_at.to_i > 0
+
+      release_time(offered).to_i > installed_at.to_i ? 'switch' : nil
     end
 
     # Установка .rbz с любого URL через официальный Sketchup.install_from_archive.
-    def install_from_url(url, what = 'расширение', silent = false)
+    # id — идентификатор расширения: при успешной установке фиксируется дата
+    # сборки (installed_at_<id>), по которой потом распознаются переизданные
+    # релизы без бампа версии.
+    def install_from_url(url, what = 'расширение', silent = false, id: nil)
       url = url.to_s
       if url.empty?
         log_debug("install_from_url(#{what}): пустой URL — отмена")
@@ -344,6 +359,7 @@ module Dn1sup
       end
       log_debug("install_from_url(#{what}): install_from_archive -> #{ok ? 'OK' : 'FAIL'}")
       if ok
+        mark_installed(id) if id
         inform("#{what}: обновление установлено.\n\n" \
                'Перезапустите SketchUp, чтобы новый код загрузился.') unless silent
       else
@@ -356,15 +372,23 @@ module Dn1sup
 
     # --- internals ---------------------------------------------------------
 
-    # Сетевая часть проверки (может выполняться в фоне): { release:, latest: } или nil.
-    # latest — per-extension версия из registry.json либо тег релиза.
+    # Сетевая часть проверки (может выполняться в фоне):
+    # { release:, latest:, from_registry: } или nil.
+    # latest — per-extension версия из registry.json либо тег релиза;
+    # from_registry показывает источник latest — от него зависит, можно ли
+    # сравнивать дату релиза с датой установки (в монорепо тег релиза может
+    # описывать другое расширение).
     def fetch_latest(cfg)
       release = latest_release(cfg[:repo].to_s)
       return nil unless release.is_a?(Hash) && release.key?('tag_name')
 
       entry = registry_entry(cfg[:repo].to_s, cfg[:id].to_s)
       ver   = entry.is_a?(Hash) ? entry['version'].to_s : ''
-      { release: release, latest: ver != '' ? ver : release['tag_name'].to_s }
+      if ver != ''
+        { release: release, latest: ver, from_registry: true }
+      else
+        { release: release, latest: release['tag_name'].to_s, from_registry: false }
+      end
     end
 
     # UI-часть проверки (главный поток). Возвращает summary или nil.
@@ -379,9 +403,16 @@ module Dn1sup
 
       latest  = norm_version(fetched[:latest])
       current = norm_version(cfg[:version].to_s)
+      same_version = false
       unless newer?(latest, current)
-        inform("#{id_str}: у вас уже установлена актуальная версия (#{cfg[:version]}).") if force && !silent
-        return nil
+        # Номер версии не новее — смотрим на дату публикации релиза: релиз,
+        # изданный позже установленной сборки (переизпуск без бампа версии,
+        # смена схемы нумерации), тоже считается обновлением.
+        unless release_newer_than_install?(cfg, fetched)
+          inform("#{id_str}: у вас уже установлена актуальная версия (#{cfg[:version]}).") if force && !silent
+          return nil
+        end
+        same_version = true
       end
 
       release = fetched[:release]
@@ -393,8 +424,24 @@ module Dn1sup
         page_url:  release['html_url'].to_s,
         asset_url: asset_url(release, cfg[:asset].to_s)
       }
+      summary[:same_version] = true if same_version
       offer_install(summary, background: !force) unless silent
       summary
+    end
+
+    # Релиз издан позже установленной сборки? Сравнение возможно, только когда
+    # известна дата установки текущей версии (пишется при установке через
+    # апдейтер/Store) и релиз относится к этому расширению: в монорепо тег
+    # релиза может описывать другое расширение, тогда его дата ничего не
+    # говорит об этом расширении (версия из registry.json авторитетна).
+    def release_newer_than_install?(cfg, fetched)
+      return false if fetched[:from_registry] &&
+                      fetched[:latest].to_s != fetched[:release]['tag_name'].to_s.sub(/\Av/, '')
+
+      inst_time = installed_at(cfg[:id])
+      return false unless inst_time
+
+      release_time(fetched[:release]).to_i > inst_time
     end
 
     # Запись расширения из registry.json репозитория (источник per-extension версий).
@@ -436,6 +483,23 @@ module Dn1sup
     def mark_checked(id)
       return unless defined?(Sketchup)
       Sketchup.write_default(SECTION, "last_#{id}", Time.now.to_i)
+    rescue StandardError
+      nil
+    end
+
+    # Дата установки текущей сборки расширения (unixtime) или nil, если
+    # неизвестна (расширение ставилось не через апдейтер/Store).
+    def installed_at(id)
+      return nil unless defined?(Sketchup)
+      v = Sketchup.read_default(SECTION, "installed_at_#{id}")
+      v.to_i > 0 ? v.to_i : nil
+    rescue StandardError
+      nil
+    end
+
+    def mark_installed(id, time = Time.now)
+      return unless defined?(Sketchup)
+      Sketchup.write_default(SECTION, "installed_at_#{id}", time.to_i)
     rescue StandardError
       nil
     end
@@ -497,8 +561,7 @@ module Dn1sup
 
       note = UI::Notification.new(
         summary[:id].to_s,
-        "Доступна версия #{summary[:latest]} (у вас #{summary[:current]}).\n" \
-        'Нажмите, чтобы открыть страницу релиза.'
+        "#{update_headline(summary)}Нажмите, чтобы открыть страницу релиза."
       )
       note.onclick { open_url(summary[:page_url]) }
       note.show
@@ -508,19 +571,30 @@ module Dn1sup
       false
     end
 
+    # Заголовок уведомления об обновлении. При переизпуске той же версии
+    # «доступна версия X (у вас X)» сбивает с толку — формулируем через дату.
+    def update_headline(summary)
+      if summary[:same_version]
+        "Опубликована обновлённая сборка версии #{summary[:latest]} " \
+          "(ваша установлена раньше).\n"
+      else
+        "Доступна версия #{summary[:latest]} (у вас #{summary[:current]}).\n"
+      end
+    end
+
     # Диалог установки (YES/NO) — по явному запросу пользователя.
     def offer_dialog(summary)
       if summary[:asset_url].to_s.empty?
-        return unless ask("#{summary[:id]}: доступна версия #{summary[:latest]} " \
-                          "(у вас #{summary[:current]}).\nОткрыть страницу релизов?")
+        return unless ask("#{summary[:id]}: #{update_headline(summary)}" \
+                          'Открыть страницу релизов?')
         open_url(summary[:page_url])
         return
       end
-      msg = "#{summary[:id]}: доступна версия #{summary[:latest]} (у вас #{summary[:current]}).\n" \
+      msg = "#{summary[:id]}: #{update_headline(summary)}" \
             "\n#{short_notes(summary[:notes])}\n" \
             "\nСкачать и установить обновление сейчас?"
       return unless ask(msg)
-      install_from_url(summary[:asset_url], summary[:id])
+      install_from_url(summary[:asset_url], summary[:id], false, id: summary[:id])
     end
 
     # .rbz — это zip: начинается с "PK".

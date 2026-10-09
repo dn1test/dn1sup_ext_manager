@@ -3,7 +3,7 @@
     "id": "dn1sup_ext_manager",
     "name": "DN1Sup Extension Store",
     "repo": "dn1test/dn1sup_ext_manager",
-    "version": "0.8.0"
+    "version": "0.9.0"
   },
   {
     "id": "dn1sup_time_project2",

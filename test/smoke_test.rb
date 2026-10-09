@@ -426,6 +426,77 @@ pre_list = [
 assert 'choose_release пропускает prerelease', Dn1sup::Updater.choose_release(pre_list)['tag_name'] == 'v0.4.9'
 assert 'choose_release пустой/битый список — nil', Dn1sup::Updater.choose_release([nil, 'x', {}]).nil?
 
+# 16b. Дата-фолбэк: обновление по дате публикации релиза, а не только по номеру
+assert 'installed_at: не задано — nil', Dn1sup::Updater.installed_at('date_none').nil?
+Dn1sup::Updater.mark_installed('date_rt')
+at = Dn1sup::Updater.installed_at('date_rt')
+assert 'installed_at: mark_installed -> чтение', at.is_a?(Integer) && at > 0, at.inspect
+
+repub_rel = {
+  'tag_name' => 'v1.2.3', 'published_at' => '2026-10-09T00:00:00Z',
+  'body' => 'hotfix без бампа версии', 'html_url' => 'https://example.com/r', 'assets' => []
+}
+cfg_date = { id: 'date_t1', repo: 'o/r', version: '1.2.3', asset: 'x.rbz' }
+
+# Тот же номер версии, релиз издан позже установки -> предлагаем установку
+Sketchup.write_default('Dn1supUpdater', 'installed_at_date_t1', 1_600_000_000)
+s = Dn1sup::Updater.apply_check(cfg_date, { release: repub_rel, latest: '1.2.3', from_registry: false },
+                                force: true, silent: true)
+assert 'apply_check: переизданный релиз той же версии — обновление по дате',
+       s.is_a?(Hash) && s[:same_version] == true, s.inspect
+
+# Релиз старее установленной сборки — прежнее «актуальная версия»
+Sketchup.write_default('Dn1supUpdater', 'installed_at_date_t1', 1_900_000_000)
+s = Dn1sup::Updater.apply_check(cfg_date, { release: repub_rel, latest: '1.2.3', from_registry: false },
+                                force: true, silent: true)
+assert 'apply_check: релиз старее установки — nil', s.nil?
+
+# Дата установки неизвестна (ручная установка) — прежнее поведение
+Sketchup.write_default('Dn1supUpdater', 'installed_at_date_t1', nil)
+s = Dn1sup::Updater.apply_check(cfg_date, { release: repub_rel, latest: '1.2.3', from_registry: false },
+                                force: true, silent: true)
+assert 'apply_check: без даты установки — nil', s.nil?
+
+# Монорепо: версия из registry не совпадает с тегом релиза — релиз чужой,
+# его дату сравнивать нельзя
+cfg_mono = { id: 'date_t2', repo: 'o/r', version: '2.0.0', asset: 'y.rbz' }
+Sketchup.write_default('Dn1supUpdater', 'installed_at_date_t2', 1_600_000_000)
+s = Dn1sup::Updater.apply_check(cfg_mono, { release: repub_rel, latest: '2.0.0', from_registry: true },
+                                force: true, silent: true)
+assert 'apply_check: монорепо, чужой тег релиза — nil', s.nil?
+
+# Монорепо: версия из registry совпадает с тегом — дата-фолбэк работает
+mono_rel = repub_rel.merge('tag_name' => 'v2.0.0')
+s = Dn1sup::Updater.apply_check(cfg_mono, { release: mono_rel, latest: '2.0.0', from_registry: true },
+                                force: true, silent: true)
+assert 'apply_check: монорепо, тег соответствует — обновление по дате',
+       s.is_a?(Hash) && s[:same_version] == true, s.inspect
+
+# Численно новая версия — как раньше, без даты установки и без флага
+Sketchup.write_default('Dn1supUpdater', 'installed_at_date_t1', nil)
+new_rel = repub_rel.merge('tag_name' => 'v1.3.0')
+s = Dn1sup::Updater.apply_check(cfg_date, { release: new_rel, latest: '1.3.0', from_registry: false },
+                                force: true, silent: true)
+assert 'apply_check: новая версия — update как раньше, без same_version',
+       s.is_a?(Hash) && !s.key?(:same_version), s.inspect
+
+# product_status: фолбэк на дату установки, когда релиза установленной версии
+# нет в списке
+older_install = 1_600_000_000   # 2020-09, раньше релиза 0.4.1 (2026-10)
+newer_install = 1_900_000_000   # 2030-03, позже релиза
+v041 = { 'tag_name' => 'v0.4.1', 'published_at' => '2026-10-09T06:17:55Z' }
+assert 'product_status: релиза нет в списке, установка старее — switch',
+       Dn1sup::Updater.product_status('1.0.0', v041, [], installed_at: older_install) == 'switch'
+assert 'product_status: релиза нет в списке, установка новее — nil',
+       Dn1sup::Updater.product_status('1.0.0', v041, [], installed_at: newer_install).nil?
+assert 'product_status: релиза нет в списке, даты нет — nil (как раньше)',
+       Dn1sup::Updater.product_status('1.0.0', v041, []).nil?
+# Переизпуск той же версии: релиз опубликован позже установки
+assert 'product_status: та же версия, переиздана позже установки — switch',
+       Dn1sup::Updater.product_status('0.4.1', v041, [v041], installed_at: older_install) == 'switch'
+assert 'product_status: та же версия, установка позже релиза — current',
+       Dn1sup::Updater.product_status('0.4.1', v041, [v041], installed_at: newer_install) == 'current'
+
 # 17. Живой список релизов GET /releases
 live_releases = Dn1sup::Updater.releases('zinin/sketchup-mcp2')
 assert 'releases возвращает непустой массив', live_releases.is_a?(Array) && live_releases.any?, "#{live_releases.size} релизов"

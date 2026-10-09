@@ -19,7 +19,7 @@ module Dn1sup
 
   module ExtManager
     ID      = 'dn1sup_ext_manager'
-    VERSION = '0.8.0'
+    VERSION = '0.9.0'
     REPO    = 'dn1test/dn1sup_ext_manager'
     ASSET   = "#{ID}.rbz"
     PAGE_URL     = "https://github.com/#{REPO}/releases"
@@ -459,8 +459,10 @@ module Dn1sup
         # Актуальная версия расширения: из тега релиза репозитория либо из реестра
         ext_target_ver = !latest_tag.empty? ? latest_tag.sub(/\Av/i, '') : entry['version'].to_s
 
-        # Статус относительно предлагаемого релиза: 'update' / 'switch' / 'current' / nil
-        status = Dn1sup::Updater.product_status(installed_ver, offered, rel_list)
+        # Статус относительно предлагаемого релиза: 'update' / 'switch' / 'current' / nil.
+        # Для переизданных релизов без бампа версии — дата установки текущей сборки.
+        installed_at = Dn1sup::Updater.installed_at(id) if is_installed
+        status = Dn1sup::Updater.product_status(installed_ver, offered, rel_list, installed_at: installed_at)
         has_update = (status == 'update')
 
         # Лог правок (коммиты) между установленной и предлагаемой версиями —
@@ -524,7 +526,7 @@ module Dn1sup
         }
       end
 
-      ok = Dn1sup::Updater.install_from_url(url, "#{name} (#{release['tag_name']})", true)
+      ok = Dn1sup::Updater.install_from_url(url, "#{name} (#{release['tag_name']})", true, id: id)
       if ok
         # Сохраняем актуальную версию из релиза репозитория
         installed_ver = release['tag_name'].to_s.sub(/\Av/i, '')
