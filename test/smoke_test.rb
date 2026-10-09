@@ -237,6 +237,8 @@ begin
     :@release_cache,
     entries.each_with_object({}) { |e, h| h[e['repo'].to_s] = { 'tag_name' => 'v9.9.9' } }
   )
+  # Откладываем автопоиск GitHub: dispatch-тесты должны быть офлайн
+  Sketchup.write_default('DN1Sup ExtManager', 'last_discovery', Time.now.to_i)
 
   store_dlg.scripts.clear
   Dn1sup::ExtManager.dispatch(store_dlg, 'ready', '')
@@ -256,6 +258,12 @@ begin
   conf_script = store_dlg.scripts.grep(/window\.pushResult\(/).last
   assert 'dispatch confirm_uninstall -> pushResult(kind, payload)', !!conf_script && conf_script.include?('confirm_uninstall'), conf_script.to_s[0, 160]
 
+  store_dlg.scripts.clear
+  Dn1sup::ExtManager.dispatch(store_dlg, 'hide', JSON.generate('repo' => 'dn1test/dn1sup_dummy_found'))
+  assert 'dispatch hide -> перерисовка каталога', store_dlg.scripts.grep(/\Awindow\.pushState\(/).any?
+  assert 'dispatch hide записал pref', Sketchup.read_default('DN1Sup ExtManager', 'hidden_repos').to_s.include?('dn1sup_dummy_found')
+  Dn1sup::ExtManager.unhide_all_repos
+
   before = $dialog_log.size
   Dn1sup::ExtManager.dispatch(store_dlg, 'неизвестная_команда', '')
   assert 'dispatch неизвестная команда не роняет код', $dialog_log.size >= before
@@ -264,6 +272,80 @@ ensure
   UI.singleton_class.send(:remove_method, :stop_timer) rescue nil
   Dn1sup::ExtManager.instance_variable_set(:@dialog, nil)
   Dn1sup::ExtManager.instance_variable_set(:@release_cache, {})
+  Dn1sup::ExtManager.unhide_all_repos
+end
+
+# 13b. Автопоиск расширений: слияние реестра и найденного, скрытие, коммиты,
+# снапшот v3 (все проверки офлайн — найденное подкладывается в кэш руками)
+discovered_fixture = [
+  {
+    'id'          => 'dn1sup_dummy_found',
+    'name'        => 'DN1Sup Dummy Found',
+    'description' => 'расширение, найденное на GitHub вне реестра',
+    'repo'        => 'dn1test/dn1sup_dummy_found',
+    'discovered'  => true
+  }
+]
+begin
+  Dn1sup::ExtManager.instance_variable_set(:@discovered_entries, discovered_fixture)
+
+  merged = Dn1sup::ExtManager.merged_entries
+  assert 'merged_entries: реестр + найденное', merged.any? { |e| e['id'] == 'dn1sup_dummy_found' } && merged.any? { |e| e['id'] == 'dn1sup_ext_manager' }
+  assert 'find_entry находит найденное расширение', Dn1sup::ExtManager.find_entry('dn1sup_dummy_found').is_a?(Hash)
+  assert 'product_name для найденного расширения', Dn1sup::ExtManager.product_name('dn1sup_dummy_found') == 'DN1Sup Dummy Found'
+
+  # Найденное без известных релизов в каталог не попадает
+  offline = Dn1sup::ExtManager.collect_products_data(false, check_releases: false)
+  assert 'collect: найденное без релизов скрыто', offline.none? { |p| p['discovered'] }
+
+  # С известными релизами появляется карточка discovered (не установлено)
+  Dn1sup::ExtManager.instance_variable_set(
+    :@releases_cache,
+    {
+      'dn1test/dn1sup_dummy_found' => [
+        {
+          'tag_name' => 'v0.1.0', 'published_at' => '2026-10-01T00:00:00Z',
+          'assets' => [{ 'name' => 'dn1sup_dummy_found.rbz', 'browser_download_url' => 'https://example.com/x.rbz' }]
+        }
+      ]
+    }
+  )
+  dummy = Dn1sup::ExtManager.collect_products_data(false, check_releases: false).find { |p| p['id'] == 'dn1sup_dummy_found' }
+  assert 'collect: найденное с релизами показано', !!dummy && dummy['discovered'] == true
+  assert 'collect: найденное помечено не установленным', !!dummy && dummy['is_installed'] == false
+  assert 'collect: у найденного есть .rbz ассет', !!dummy && dummy['asset'] == 'dn1sup_dummy_found.rbz'
+
+  # Коммиты из кэша попадают в payload при совпадении пары версий
+  Dn1sup::ExtManager.instance_variable_set(
+    :@commits_cache,
+    { 'dn1test/dn1sup_dummy_found' => { 'installed' => '', 'offered' => '0.1.0', 'messages' => ['feat: demo'] } }
+  )
+  dummy2 = Dn1sup::ExtManager.collect_products_data(false, check_releases: false).find { |p| p['id'] == 'dn1sup_dummy_found' }
+  assert 'collect: коммиты в payload при совпадении версий', !!dummy2 && dummy2['commits'] == ['feat: demo']
+
+  # Скрытие найденного репозитория
+  Dn1sup::ExtManager.hide_repo('dn1test/dn1sup_dummy_found')
+  assert 'hide_repo: запись в pref', Sketchup.read_default('DN1Sup ExtManager', 'hidden_repos').to_s.include?('dn1sup_dummy_found')
+  assert 'merged_entries: скрытое отфильтровано', Dn1sup::ExtManager.merged_entries.none? { |e| e['id'] == 'dn1sup_dummy_found' }
+  Dn1sup::ExtManager.unhide_all_repos
+  assert 'unhide_all_repos: pref очищен', Dn1sup::ExtManager.hidden_repos.empty?
+
+  # Снапшот v3: найденные расширения и коммиты переживают перезапуск
+  Dn1sup::ExtManager.save_release_snapshot
+  Dn1sup::ExtManager.instance_variable_set(:@discovered_entries, [])
+  Dn1sup::ExtManager.instance_variable_set(:@commits_cache, {})
+  Dn1sup::ExtManager.instance_variable_set(:@release_cache, {})
+  Dn1sup::ExtManager.instance_variable_set(:@releases_cache, {})
+  Dn1sup::ExtManager.load_release_snapshot
+  assert 'снапшот v3: discovered восстановлен', Dn1sup::ExtManager.merged_entries.any? { |e| e['id'] == 'dn1sup_dummy_found' }
+  assert 'снапшот v3: commits восстановлен',
+         Dn1sup::ExtManager.instance_variable_get(:@commits_cache)['dn1test/dn1sup_dummy_found']['messages'] == ['feat: demo']
+ensure
+  Dn1sup::ExtManager.instance_variable_set(:@discovered_entries, [])
+  Dn1sup::ExtManager.instance_variable_set(:@commits_cache, {})
+  Dn1sup::ExtManager.instance_variable_set(:@release_cache, {})
+  Dn1sup::ExtManager.instance_variable_set(:@releases_cache, {})
+  Dn1sup::ExtManager.unhide_all_repos
 end
 
 # 14. Уровни логирования: краткий прикладной лог + [DEBUG] только при флаге debug
@@ -352,6 +434,19 @@ assert 'choose_release по живому списку даёт тег из эт�
        live_offered && live_releases.any? { |r| r['tag_name'] == live_offered['tag_name'] }, live_offered && live_offered['tag_name']
 bad_releases = Dn1sup::Updater.releases('nonexistent-user-000/nonexistent-repo-999')
 assert 'releases 404 -> [] (устойчивость)', bad_releases == []
+
+# 18. Автопоиск: репозитории аккаунта dn1test (живой GitHub)
+owner_repos = Dn1sup::Updater.repos_of_owner('dn1test')
+assert 'repos_of_owner возвращает репозитории', owner_repos.is_a?(Array) && owner_repos.any?, "#{owner_repos.size} репозиториев"
+assert 'repos_of_owner содержит менеджер', owner_repos.any? { |r| r['full_name'] == 'dn1test/dn1sup_ext_manager' }
+assert 'repos_of_owner неизвестный аккаунт -> []', Dn1sup::Updater.repos_of_owner('nonexistent-user-000-zzz') == []
+
+# 19. Лог правок: коммиты между тегами (живой GitHub)
+cmts = Dn1sup::Updater.compare_commits('dn1test/dn1sup_time_project2', 'v0.4.1', 'v0.5.0', limit: 5)
+assert 'compare_commits возвращает сообщения', cmts.is_a?(Array) && cmts.any?, cmts.inspect
+assert 'compare_commits: непустые строки', cmts.all? { |m| m.is_a?(String) && !m.strip.empty? }
+assert 'compare_commits: несуществующие теги -> []',
+       Dn1sup::Updater.compare_commits('dn1test/dn1sup_time_project2', 'v9.9.9', 'v0.0.1') == []
 
 puts "\n#{$failed.zero? ? 'ALL TESTS PASSED' : "#{$failed} FAILED"}"
 exit($failed.zero? ? 0 : 1)

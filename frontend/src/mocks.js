@@ -47,7 +47,25 @@ let mockProducts = [
     has_update: false,
     status: 'switch',
     changelog: 'Демо-лог изменений.',
+    commits: ['feat: демо-коммит — сменена схема нумерации', 'fix: демо-коммит — мелкие правки'],
     release_url: 'https://example.com/demo-extension-three/releases',
+    published_at: ''
+  },
+  {
+    id: 'demo_extension_four',
+    name: 'Demo Extension Four',
+    description: 'Демо-карточка расширения, найденного автоматически на GitHub.',
+    repo: 'example/demo-extension-four',
+    asset: 'demo_extension_four.rbz',
+    discovered: true,
+    installed_version: '',
+    is_installed: false,
+    latest_version: '0.1.0',
+    has_update: false,
+    status: '',
+    changelog: 'Демо-лог изменений.',
+    commits: [],
+    release_url: 'https://example.com/demo-extension-four/releases',
     published_at: ''
   }
 ]

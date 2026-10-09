@@ -26,7 +26,7 @@ const isMock = !getSketchup()
 const state = reactive({
   ready: false,
   version: '…',
-  products: [],  // [{id,name,description,repo,asset,installed_version,is_installed,latest_version,has_update,status,changelog,release_url,published_at}]
+  products: [],  // [{id,name,description,repo,asset,discovered,installed_version,is_installed,latest_version,has_update,status,changelog,commits,release_url,published_at}]
   busy: null,    // { id, action, text } — длительная операция над карточкой
   toast: null    // { kind: 'ok' | 'err' | 'info', text }
 })
@@ -155,6 +155,15 @@ export function confirmUninstall(id) {
   }
   state.busy = { id, action: 'uninstall', text: 'Ожидание подтверждения…' }
   callRubyJson('confirm_uninstall', { id })
+}
+
+/** Скрыть найденное на GitHub расширение (не входит в registry.json). */
+export function hide(repo) {
+  if (isMock) {
+    state.products = state.products.filter(p => p.repo !== repo)
+    return
+  }
+  callRubyJson('hide', { repo })
 }
 
 export { state, isMock, toast, clearBusy }

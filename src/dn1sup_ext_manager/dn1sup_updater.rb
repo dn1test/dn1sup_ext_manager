@@ -123,6 +123,58 @@ module Dn1sup
       []
     end
 
+    # Все репозитории аккаунта/организации (для автопоиска расширений).
+    # GET /users/{owner}/repos, а если аккаунт — организация, фолбэк на
+    # /orgs/{owner}/repos. Возвращает Array JSON-объектов или [] при ошибке.
+    def repos_of_owner(owner)
+      require 'net/http'
+      require 'json'
+      owner = owner.to_s
+      %w[users orgs].each do |segment|
+        uri = URI.parse("#{GITHUB_API}/#{segment}/#{owner}/repos?per_page=100&sort=pushed")
+        res = http_get(uri)
+        next unless res.is_a?(Net::HTTPSuccess)
+
+        json = JSON.parse(res.body)
+        if json.is_a?(Array)
+          log_debug("repos_of_owner(#{owner}): OK #{json.size} репозиториев (/#{segment}/)")
+          return json
+        end
+      end
+      log_debug("repos_of_owner(#{owner}): недоступно")
+      []
+    rescue StandardError, ScriptError => e
+      log_error(e)
+      []
+    end
+
+    # Лог правок между двумя тегами: первые строки сообщений коммитов.
+    # GET /repos/{repo}/compare/{base}...{head}. Возвращает Array строк
+    # (до limit) или [] при любой ошибке (тега нет, сеть и т.п.).
+    def compare_commits(repo, base, head, limit: 15)
+      require 'net/http'
+      require 'json'
+      base_s = URI.encode_www_form_component(base.to_s)
+      head_s = URI.encode_www_form_component(head.to_s)
+      uri = URI.parse("#{GITHUB_API}/repos/#{repo}/compare/#{base_s}...#{head_s}")
+      res = http_get(uri)
+      return [] unless res.is_a?(Net::HTTPSuccess)
+
+      json = JSON.parse(res.body)
+      commits = json.is_a?(Hash) && json['commits'].is_a?(Array) ? json['commits'] : []
+      msgs = commits.first(limit.to_i).map do |c|
+        msg = c.is_a?(Hash) && c['commit'].is_a?(Hash) ? c['commit']['message'].to_s : ''
+        first = msg.split(/\r?\n/).first.to_s.strip
+        first.empty? ? nil : first
+      end
+      msgs.compact! || msgs
+      log_debug("compare_commits(#{repo}, #{base}...#{head}): OK #{msgs.size} коммитов")
+      msgs
+    rescue StandardError, ScriptError => e
+      log_error(e)
+      []
+    end
+
     # Скачивает произвольный URL в файл. Возвращает путь или nil.
     def download(url, dest_path)
       require 'net/http'

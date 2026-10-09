@@ -10,8 +10,8 @@ module Dn1sup
     PLUGIN_ROOT = File.dirname(__FILE__).freeze
 
     extension = SketchupExtension.new('DN1Sup Extension Store', File.join(PLUGIN_ROOT, 'dn1sup_ext_manager', 'main'))
-    extension.description = 'Менеджер расширений: каталог, установка и обновление .rbz-расширений напрямую с GitHub Releases; кнопка на панели инструментов.'
-    extension.version     = '0.7.0'
+    extension.description = 'Менеджер расширений: каталог, автопоиск расширений на GitHub, установка и обновление .rbz напрямую из GitHub Releases; кнопка на панели инструментов.'
+    extension.version     = '0.8.0'
     extension.creator     = 'DN1Sup'
     extension.copyright   = '2026 DN1Sup <dn1codegen@gmail.com> (MIT)'
     extension.id          = 'dn1sup_ext_manager' if extension.respond_to?(:id=)

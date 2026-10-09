@@ -16,6 +16,15 @@
           <span class="text-sm font-semibold leading-tight">{{ p.name }}</span>
           <span class="es-id-badge">{{ p.id }}</span>
           <span
+            v-if="p.discovered"
+            class="inline-flex items-center gap-1 px-1.5 py-px rounded-full text-[11px] font-medium whitespace-nowrap
+                   bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300"
+            title="Расширение найдено автоматически на GitHub — его нет в основном реестре каталога"
+          >
+            <Sparkles :size="11" />
+            Найдено
+          </span>
+          <span
             class="inline-flex items-center gap-1 px-1.5 py-px rounded-full text-[11px] font-medium whitespace-nowrap"
             :class="statusCls"
           >
@@ -97,6 +106,16 @@
           >
             <Trash2 :size="14" />
           </button>
+
+          <button
+            v-if="p.discovered"
+            class="p-1.5 rounded-lg h-[30px] w-[30px] flex items-center justify-center
+                   text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            title="Скрыть это расширение из каталога (вернуть: меню DN1Sup → Extension Store → Показать скрытые расширения)"
+            @click="hide(p.repo)"
+          >
+            <EyeOff :size="14" />
+          </button>
         </template>
       </div>
     </div>
@@ -108,12 +127,23 @@
       leave-active-class="transition duration-100 ease-in"
       leave-to-class="opacity-0 -translate-y-1"
     >
-      <div v-if="changelogOpen" class="px-3 pb-2.5">
+      <div v-if="changelogOpen" class="px-3 pb-2.5 space-y-1.5">
         <div
           class="max-h-[120px] overflow-y-auto rounded-lg bg-slate-50 dark:bg-slate-950/75
                  border border-slate-200 dark:border-slate-800 px-3 py-2
                  text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed whitespace-pre-line"
         >{{ changelogText }}</div>
+        <div
+          v-if="commitList.length"
+          class="max-h-[120px] overflow-y-auto rounded-lg bg-slate-50 dark:bg-slate-950/75
+                 border border-slate-200 dark:border-slate-800 px-3 py-2
+                 text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed"
+        >
+          <div class="font-semibold mb-1">Изменения ({{ commitList.length }}):</div>
+          <ul class="list-disc list-inside space-y-0.5">
+            <li v-for="(msg, i) in commitList" :key="i" class="truncate" :title="msg">{{ msg }}</li>
+          </ul>
+        </div>
       </div>
     </transition>
   </article>
@@ -122,9 +152,9 @@
 <script setup>
 import { computed, ref } from 'vue'
 import {
-  Puzzle, ChevronDown, Loader2, Zap, RotateCw, Download, Trash2, ArrowLeftRight
+  Puzzle, ChevronDown, Loader2, Zap, RotateCw, Download, Trash2, ArrowLeftRight, Sparkles, EyeOff
 } from 'lucide-vue-next'
-import { state, install, update, confirmUninstall } from '../composables/useSketchupBridge'
+import { state, install, update, confirmUninstall, hide } from '../composables/useSketchupBridge'
 import { useProductStatus } from '../composables/useProductStatus'
 
 const props = defineProps({ product: { type: Object, required: true } })
@@ -135,6 +165,8 @@ const changelogOpen = ref(false)
 const changelogText = computed(() =>
   (p.value.changelog || '').trim() || 'Лог изменений для этого расширения отсутствует.'
 )
+
+const commitList = computed(() => (Array.isArray(p.value.commits) ? p.value.commits : []))
 
 const isBusy = computed(() => state.busy?.id === p.value.id)
 const busy = computed(() => (isBusy.value ? state.busy : null))

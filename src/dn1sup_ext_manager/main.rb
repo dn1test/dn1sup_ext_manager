@@ -19,11 +19,18 @@ module Dn1sup
 
   module ExtManager
     ID      = 'dn1sup_ext_manager'
-    VERSION = '0.7.0'
+    VERSION = '0.8.0'
     REPO    = 'dn1test/dn1sup_ext_manager'
     ASSET   = "#{ID}.rbz"
     PAGE_URL     = "https://github.com/#{REPO}/releases"
     REGISTRY_URL = "https://raw.githubusercontent.com/#{REPO}/main/registry.json"
+
+    # Автопоиск расширений: аккаунт/организация на GitHub, в которой ищутся
+    # репозитории dn1sup_*, отсутствующие в registry.json. Менеджер и
+    # расширения связаны только этим именем — каждое расширение живёт в своём
+    # репозитории и обновляется независимо.
+    OWNER = 'dn1test'
+    DISCOVERY_INTERVAL = 24 * 60 * 60
 
     PLUGIN_DIR   = File.dirname(__FILE__).freeze
     HTML_PATH    = File.join(PLUGIN_DIR, 'html', 'index.html').freeze
@@ -34,6 +41,8 @@ module Dn1sup
     @dialog = nil
     @release_cache = {}   # repo => предлагаемый (новейший стабильный) релиз
     @releases_cache = {}  # repo => [релизы] — полный список для статусов
+    @discovered_entries = [] # найденные на GitHub расширения вне registry.json
+    @commits_cache = {}   # repo => {'installed'=>..,'offered'=>..,'messages'=>[...]}
 
     module_function
 
@@ -67,6 +76,115 @@ module Dn1sup
       list = list['extensions'] if list.is_a?(Hash) && list['extensions'].is_a?(Array)
       list.is_a?(Array) ? list.find_all { |e| e.is_a?(Hash) && !e['id'].to_s.empty? } : []
     rescue StandardError, ScriptError => e
+      Dn1sup::Updater.log_error(e)
+      []
+    end
+
+    # ---- Автопоиск расширений на GitHub ------------------------------------
+
+    # Скрытые пользователем найденные репозитории (pref, CSV).
+    def hidden_repos
+      return [] unless defined?(Sketchup)
+
+      Sketchup.read_default('DN1Sup ExtManager', 'hidden_repos', '')
+              .to_s.split(',').map(&:strip).reject(&:empty?)
+    rescue StandardError
+      []
+    end
+
+    def hide_repo(repo)
+      return if repo.to_s.empty? || !defined?(Sketchup)
+
+      list = (hidden_repos | [repo.to_s]).uniq
+      Sketchup.write_default('DN1Sup ExtManager', 'hidden_repos', list.join(','))
+    rescue StandardError => e
+      Dn1sup::Updater.log_error(e)
+    end
+
+    def unhide_all_repos
+      return unless defined?(Sketchup)
+
+      Sketchup.write_default('DN1Sup ExtManager', 'hidden_repos', nil)
+    rescue StandardError => e
+      Dn1sup::Updater.log_error(e)
+    end
+
+    # Полный список записей каталога: явный registry.json + найденные на
+    # GitHub расширения, которых в реестре нет. Реестр первичен: найденное
+    # дополняет, но не заменяет. Скрытые репозитории отфильтровываются.
+    def merged_entries
+      entries = load_registry
+      known = {}
+      entries.each do |e|
+        known[e['id'].to_s] = true
+        known[e['repo'].to_s] = true
+      end
+      @discovered_entries.each do |e|
+        next if known[e['repo'].to_s] || known[e['id'].to_s]
+
+        entries << e
+      end
+      hidden = hidden_repos
+      hidden.empty? ? entries : entries.reject { |e| hidden.include?(e['repo'].to_s) }
+    end
+
+    # Запись каталога по id — и из реестра, и среди найденных (установка,
+    # удаление и имена работают для обоих источников).
+    def find_entry(id)
+      merged_entries.find { |e| e['id'].to_s == id.to_s }
+    end
+
+    # Пора ли сканировать GitHub: принудительно по кнопке либо не чаще раза
+    # в сутки (pref last_discovery).
+    def discovery_due?(force)
+      return true if force
+      return false unless defined?(Sketchup)
+
+      last = Sketchup.read_default('DN1Sup ExtManager', 'last_discovery', 0)
+      (Time.now.to_i - last.to_i) >= DISCOVERY_INTERVAL
+    rescue StandardError
+      false
+    end
+
+    def mark_discovered
+      return unless defined?(Sketchup)
+
+      Sketchup.write_default('DN1Sup ExtManager', 'last_discovery', Time.now.to_i)
+    rescue StandardError
+      nil
+    end
+
+    # Скан репозиториев dn1sup_* аккаунта OWNER, отсутствующих в registry.json.
+    # Только сеть (вызывается в фоновом потоке). Метаданные — из registry.json
+    # самого репозитория, фолбэк — описание репозитория с GitHub.
+    def discover_repos
+      registry_ids = {}
+      load_registry.each do |e|
+        registry_ids[e['id'].to_s] = true
+        registry_ids[e['repo'].to_s] = true
+      end
+      found = []
+      Dn1sup::Updater.repos_of_owner(OWNER).each do |r|
+        next unless r.is_a?(Hash)
+
+        repo = r['full_name'].to_s
+        name = r['name'].to_s
+        next if repo.empty? || !name.start_with?('dn1sup_')
+        next if r['archived'] || registry_ids[repo] || registry_ids[name]
+
+        meta = Dn1sup::Updater.registry_entry(repo, name) || {}
+        entry = {
+          'id'          => meta['id'].to_s.empty? ? name : meta['id'].to_s,
+          'name'        => meta['name'].to_s.empty? ? name : meta['name'].to_s,
+          'description' => meta['description'].to_s.empty? ? r['description'].to_s : meta['description'].to_s,
+          'repo'        => repo,
+          'discovered'  => true
+        }
+        found << entry
+      end
+      store_debug("автопоиск: найдено #{found.size} новых репозиториев")
+      found
+    rescue StandardError => e
       Dn1sup::Updater.log_error(e)
       []
     end
@@ -172,15 +290,23 @@ module Dn1sup
       nil
     end
 
-    # Сохраняет компактный снапшот успешных списков релизов. Формат v2:
-    # { "version" => 2, "releases" => { repo => [release, ...] } } — до 10
-    # релизов на репозиторий (статусы и changelog берутся из них; установка
-    # всегда делает свежий запрос).
+    # Сохраняет компактный снапшот успешных списков релизов, найденных
+    # расширений и логов правок. Формат v3:
+    # { "version" => 3, "releases" => { repo => [release, ...] },
+    #   "discovered" => [entry, ...], "commits" => { repo => {...} } } —
+    # до 10 релизов на репозиторий (статусы и changelog берутся из них;
+    # установка всегда делает свежий запрос).
     def save_release_snapshot
       path = snapshot_path
       return unless path
 
-      data = { 'version' => 2, 'saved_at' => Time.now.to_i, 'releases' => {} }
+      data = {
+        'version'    => 3,
+        'saved_at'   => Time.now.to_i,
+        'releases'   => {},
+        'discovered' => @discovered_entries,
+        'commits'    => @commits_cache
+      }
       @releases_cache.each do |repo, list|
         next unless list.is_a?(Array) && !list.empty?
 
@@ -204,14 +330,24 @@ module Dn1sup
     end
 
     # Загружает снапшот в кэши (только если кэш пуст — не затирая свежие
-    # данные). Понимает формат v2 (списки релизов) и старый одиночный (v1:
-    # repo => релиз), который заворачивается в список из одного элемента.
+    # данные). Понимает формат v3 (списки релизов + найденные + коммиты) и
+    # старые: v2 (списки релизов) и v1 (repo => релиз, заворачивается в
+    # список из одного элемента).
     def load_release_snapshot
       path = snapshot_path
       return unless path && File.file?(path) && @release_cache.empty?
 
       data = JSON.parse(File.read(path))
       return unless data.is_a?(Hash)
+
+      if data['discovered'].is_a?(Array) && @discovered_entries.empty?
+        @discovered_entries = data['discovered'].find_all do |e|
+          e.is_a?(Hash) && !e['id'].to_s.empty? && !e['repo'].to_s.empty?
+        end
+      end
+      if data['commits'].is_a?(Hash) && @commits_cache.empty?
+        @commits_cache = data['commits']
+      end
 
       if data['releases'].is_a?(Hash)
         data['releases'].each do |repo, list|
@@ -278,7 +414,7 @@ module Dn1sup
     # releases: опциональный Hash { repo => release_data } для объединения данных.
     # release_lists: опциональный Hash { repo => [release, ...] } для статусов.
     def collect_products_data(force = false, check_releases: false, releases: nil, release_lists: nil)
-      entries = load_registry
+      entries = merged_entries
       return [] if entries.empty?
 
       rel_map  = releases || @release_cache || {}
@@ -291,6 +427,11 @@ module Dn1sup
 
         release = check_releases ? latest_release(repo, force) : (rel_map[repo.to_s] || {})
         rel_list = list_map[repo.to_s].is_a?(Array) ? list_map[repo.to_s] : []
+
+        # Найденные на GitHub расширения показываем, только когда известны
+        # их релизы: без них нельзя ни версию показать, ни .rbz установить.
+        next nil if entry['discovered'] && rel_list.empty?
+
         offered = Dn1sup::Updater.choose_release(rel_list)
         offered = release if offered.nil? && release.is_a?(Hash) && release.key?('tag_name')
 
@@ -322,22 +463,33 @@ module Dn1sup
         status = Dn1sup::Updater.product_status(installed_ver, offered, rel_list)
         has_update = (status == 'update')
 
+        # Лог правок (коммиты) между установленной и предлагаемой версиями —
+        # если он уже загружен и относится именно к этой паре версий.
+        commits = []
+        cached = @commits_cache[repo.to_s]
+        if cached.is_a?(Hash) && cached['installed'].to_s == installed_ver.to_s &&
+           cached['offered'].to_s == ext_target_ver && cached['messages'].is_a?(Array)
+          commits = cached['messages']
+        end
+
         {
           'id'                => id,
           'name'              => name,
           'description'       => desc,
           'repo'              => repo,
           'asset'             => asset_name,
+          'discovered'        => !!entry['discovered'],
           'installed_version' => installed_ver,
           'is_installed'      => is_installed,
           'latest_version'    => ext_target_ver.empty? ? '—' : ext_target_ver,
           'has_update'        => has_update,
           'status'            => status.to_s,
           'changelog'         => changelog,
+          'commits'           => commits,
           'release_url'       => release_url,
           'published_at'      => published_at
         }
-      end
+      end.compact
     rescue StandardError => e
       Dn1sup::Updater.log_error(e)
       []
@@ -345,10 +497,9 @@ module Dn1sup
 
     # ---- Установка / Обновление / Удаление --------------------------------
 
-    # Установка расширения по ID
+    # Установка расширения по ID (в том числе найденного на GitHub)
     def perform_install(id)
-      entries = load_registry
-      entry = entries.find { |e| e['id'].to_s == id.to_s }
+      entry = find_entry(id)
       unless entry
         store_log("установка '#{id}': расширение не найдено в реестре")
         return { 'ok' => false, 'error' => "Расширение «#{id}» не найдено в реестре." }
@@ -442,18 +593,21 @@ module Dn1sup
     # и пуш-функции window.pushState / window.pushResult.
 
     # Отправка состояния каталога в диалог.
-    # Этап 1: МГНОВЕННО отдаём локальные данные (реестр + локально установленные плагины).
-    #         Каталог отображается сразу, не дожидаясь ответа от GitHub API.
-    #         Выполняется синхронно на главном потоке (безопасно для вызовов SketchUp API).
-    # Этап 2: В фоновом потоке запрашиваем последние релизы с GitHub (только сеть, БЕЗ вызовов API SketchUp).
-    #         По готовности обновляем данные на главном потоке.
+    # Этап 1: МГНОВЕННО отдаём локальные данные (реестр + найденные ранее +
+    # локально установленные плагины). Каталог отображается сразу, не дожидаясь
+    # ответа от GitHub API. Выполняется синхронно на главном потоке
+    # (безопасно для вызовов SketchUp API).
+    # Этап 2: В фоновом потоке запрашиваем последние релизы с GitHub, при
+    # необходимости сканируем GitHub на новые расширения dn1sup_*, затем
+    # подтягиваем логи правок (коммиты) для обновлений. По готовности данные
+    # обновляются на главном потоке.
     def send_products_to_dialog(force: false)
       dlg = @dialog
       return unless dlg
 
-      # 1. Мгновенная отрисовка из локального кэша и реестра.
+      # 1. Мгновенная отрисовка из локального кэша, реестра и снапшота.
       #    Если кэш пуст (новая сессия) — подгружаем снапшот последних
-      #    успешных релизов, чтобы версии и changelog'и были видны офлайн.
+      #    успешных релизов и найденных расширений, чтобы каталог был виден офлайн.
       load_release_snapshot if @release_cache.empty?
       local = collect_products_data(false, check_releases: false)
       store_debug("отрисовка каталога: #{local.is_a?(Array) ? local.size : 0} продуктов" \
@@ -461,8 +615,7 @@ module Dn1sup
       push_state(dlg, local)
 
       # 2. Фоновое обновление версий через сеть (только сетевые запросы, без SketchUp API в потоке)
-      entries = load_registry
-      repos = entries.map { |e| e['repo'].to_s }.uniq.reject(&:empty?)
+      repos = merged_entries.map { |e| e['repo'].to_s }.uniq.reject(&:empty?)
       return if repos.empty?
 
       fetch_and_render(dlg, repos, force, attempts_left: 1)
@@ -470,33 +623,54 @@ module Dn1sup
       Dn1sup::Updater.log_error(e)
     end
 
-    # Фоновая загрузка списков релизов и перерисовка каталога. Однократный
-    # автоповтор, если сеть была недоступна в момент первого обхода.
+    # Фоновая загрузка списков релизов, автопоиска новых расширений и
+    # перерисовка каталога. Однократный автоповтор, если сеть была
+    # недоступна в момент первого обхода. После релизов — фоновая догрузка
+    # логов правок (коммитов) для продуктов с обновлением.
     def fetch_and_render(dlg, repos, force, attempts_left: 0)
+      want_discovery = discovery_due?(force)
       Dn1sup::Updater.defer_async(
         lambda do
-          result = {}
+          result = { 'releases' => {}, 'discovered' => nil }
           repos.each do |repo|
             list = releases_list(repo, force)
-            result[repo] = list unless list.empty?
+            result['releases'][repo] = list unless list.empty?
           end
+          result['discovered'] = discover_repos if want_discovery
           result
         end,
-        lambda do |fetched_lists|
+        lambda do |fetched_raw|
           next unless @dialog
 
-          fetched = fetched_lists.to_h
-          store_debug("релизы получены #{fetched.size}/#{repos.size}" \
-                      "#{fetched.size < repos.size && attempts_left == 0 ? ' (часть недоступна)' : ''}")
-          if fetched.is_a?(Hash) && fetched.any?
-            @releases_cache.merge!(fetched)
-            save_release_snapshot
-            push_state(dlg, collect_products_data(false, check_releases: false))
+          fetched = fetched_raw.is_a?(Hash) ? fetched_raw : {}
+          lists = fetched['releases'].is_a?(Hash) ? fetched['releases'] : {}
+          store_debug("релизы получены #{lists.size}/#{repos.size}" \
+                      "#{lists.size < repos.size && attempts_left == 0 ? ' (часть недоступна)' : ''}")
+
+          new_entries = fetched['discovered']
+          if new_entries.is_a?(Array)
+            known = {}
+            merged_entries.each do |e|
+              known[e['id'].to_s] = true
+              known[e['repo'].to_s] = true
+            end
+            added = new_entries.reject { |e| known[e['id'].to_s] || known[e['repo'].to_s] }
+            @discovered_entries.concat(added) unless added.empty?
+            mark_discovered
+            store_debug("автопоиск: новых расширений #{added.size}") unless added.empty?
           end
 
-          missing = repos.size - fetched.size
+          if lists.is_a?(Hash) && lists.any?
+            @releases_cache.merge!(lists)
+          end
+          save_release_snapshot
+          push_state(dlg, collect_products_data(false, check_releases: false))
+
+          missing = repos.size - lists.size
           if attempts_left > 0 && missing > 0
-            fetch_and_render(dlg, repos - fetched.keys, force, attempts_left: attempts_left - 1)
+            fetch_and_render(dlg, repos - lists.keys, force, attempts_left: attempts_left - 1)
+          else
+            fetch_commits_async(dlg)
           end
         end
       )
@@ -504,9 +678,54 @@ module Dn1sup
       Dn1sup::Updater.log_error(e)
     end
 
-    # Имя продукта из реестра по id (для диалогов подтверждения).
+    # Логи правок: для продуктов с обновлением/сменой версии подтягиваем
+    # список коммитов между установленной и предлагаемой версиями
+    # (compare API). Только сеть в фоне; результат — на главном потоке.
+    def fetch_commits_async(dlg)
+      pending = []
+      collect_products_data(false, check_releases: false).each do |p|
+        next unless p['has_update'] || p['status'] == 'switch'
+        next if p['installed_version'].to_s.empty? || p['latest_version'].to_s.empty?
+
+        cached = @commits_cache[p['repo']]
+        next if cached.is_a?(Hash) &&
+                cached['installed'].to_s == p['installed_version'].to_s &&
+                cached['offered'].to_s == p['latest_version'].to_s
+
+        pending << { 'repo' => p['repo'], 'installed' => p['installed_version'], 'offered' => p['latest_version'] }
+      end
+      return if pending.empty?
+
+      Dn1sup::Updater.defer_async(
+        lambda do
+          result = {}
+          pending.each do |item|
+            msgs = Dn1sup::Updater.compare_commits(
+              item['repo'], "v#{item['installed']}", "v#{item['offered']}", limit: 15
+            )
+            result[item['repo']] = item.merge('messages' => msgs) unless msgs.empty?
+          end
+          result
+        end,
+        lambda do |fetched|
+          next unless @dialog
+
+          commits = fetched.is_a?(Hash) ? fetched : {}
+          next if commits.empty?
+
+          @commits_cache.merge!(commits)
+          save_release_snapshot
+          push_state(dlg, collect_products_data(false, check_releases: false))
+        end
+      )
+    rescue StandardError => e
+      Dn1sup::Updater.log_error(e)
+    end
+
+    # Имя продукта по id — из реестра или среди найденных на GitHub
+    # (для диалогов подтверждения).
     def product_name(id)
-      entry = load_registry.find { |e| e['id'].to_s == id.to_s }
+      entry = find_entry(id)
       entry && !entry['name'].to_s.empty? ? entry['name'].to_s : id.to_s
     rescue StandardError
       id.to_s
@@ -628,6 +847,12 @@ module Dn1sup
       when 'uninstall'
         id = parse_json(param)['id']
         notify_action_result(id, 'uninstall', perform_uninstall(id))
+        send_products_to_dialog(force: false)
+      when 'hide'
+        # Скрыть найденное на GitHub расширение (не из реестра)
+        repo = parse_json(param)['repo']
+        hide_repo(repo)
+        store_log("скрыт найденный репозиторий #{repo}")
         send_products_to_dialog(force: false)
       when 'log_js_error'
         log_js_error(param)
@@ -809,6 +1034,13 @@ module Dn1sup
       end
       menu.add_separator
       menu.add_item('О реестре') { open_registry_repo }
+      menu.add_item('Показать скрытые расширения') do
+        if UI.messagebox('Снова показывать в каталоге все найденные на GitHub расширения?', MB_YESNO) == IDYES
+          unhide_all_repos
+          store_log('список скрытых репозиториев очищен')
+          send_products_to_dialog(force: false) if @dialog
+        end
+      end
 
       # Кнопка с иконкой на панели инструментов
       setup_toolbar

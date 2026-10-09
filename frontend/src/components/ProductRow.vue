@@ -10,6 +10,15 @@
       <div class="flex items-center gap-2 min-w-0 flex-1" :title="p.description || p.id">
         <span class="text-xs font-semibold leading-tight truncate">{{ p.name }}</span>
         <span class="es-id-badge shrink-0">{{ p.id }}</span>
+        <span
+          v-if="p.discovered"
+          class="inline-flex items-center gap-1 px-1.5 py-px rounded-full text-[11px] font-medium whitespace-nowrap shrink-0
+                 bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300"
+          title="Расширение найдено автоматически на GitHub — его нет в основном реестре каталога"
+        >
+          <Sparkles :size="11" />
+          Найдено
+        </span>
       </div>
 
       <!-- Статус + версия -->
@@ -81,6 +90,16 @@
           >
             <Trash2 :size="13" />
           </button>
+
+          <button
+            v-if="p.discovered"
+            class="p-1 rounded-lg h-[28px] w-[28px] flex items-center justify-center
+                   text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            title="Скрыть это расширение из каталога (вернуть: меню DN1Sup → Extension Store → Показать скрытые расширения)"
+            @click="hide(p.repo)"
+          >
+            <EyeOff :size="13" />
+          </button>
         </template>
       </div>
     </div>
@@ -89,8 +108,8 @@
 
 <script setup>
 import { computed } from 'vue'
-import { Puzzle, Loader2, Zap, RotateCw, Download, Trash2, ArrowLeftRight } from 'lucide-vue-next'
-import { state, install, update, confirmUninstall } from '../composables/useSketchupBridge'
+import { Puzzle, Loader2, Zap, RotateCw, Download, Trash2, ArrowLeftRight, Sparkles, EyeOff } from 'lucide-vue-next'
+import { state, install, update, confirmUninstall, hide } from '../composables/useSketchupBridge'
 import { useProductStatus } from '../composables/useProductStatus'
 
 const props = defineProps({ product: { type: Object, required: true } })
