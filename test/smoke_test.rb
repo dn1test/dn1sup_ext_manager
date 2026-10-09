@@ -163,10 +163,10 @@ assert 'check! записал метку времени', Sketchup.read_default(
 
 # 5b. registry_entry: per-extension версия из registry.json
 repo_for_reg = 'dn1test/dn1sup_ext_manager'
-reg_entry = Dn1sup::Updater.registry_entry(repo_for_reg, 'dn1sup_time_project2')
+reg_entry = Dn1sup::Updater.registry_entry(repo_for_reg, 'dn1sup_time_project')
 if reg_entry.nil?
   local_reg = JSON.parse(File.read(File.expand_path('../registry.json', __dir__)))
-  reg_entry = Dn1sup::Updater.find_registry_entry(local_reg, 'dn1sup_time_project2')
+  reg_entry = Dn1sup::Updater.find_registry_entry(local_reg, 'dn1sup_time_project')
 end
 assert 'registry_entry находит расширение', reg_entry.is_a?(Hash) && !reg_entry['repo'].to_s.empty?, reg_entry.inspect
 assert 'registry_entry для чужого id — nil', Dn1sup::Updater.registry_entry(repo_for_reg, 'no_such_ext').nil?
@@ -384,7 +384,7 @@ assert 'short_notes: длина в пределах', sn.length <= 210, "дли�
 assert 'short_notes: markdown-текст -> plain', sn.include?('Первый пункт'), sn
 
 # 16. Выбор предлагаемого релиза и статусы: сценарий смены схемы нумерации
-# (реальная ситуация dn1sup_time_project2: релиз v0.4.1 опубликован позже
+# (реальная ситуация dn1sup_time_project: релиз v0.4.1 опубликован позже
 # серии 2.4.x, /releases/latest указывает на 0.4.1 при установленной 2.4.1)
 tp_list = [
   { 'tag_name' => 'v0.4.1', 'published_at' => '2026-10-09T06:17:55Z' },
@@ -513,11 +513,11 @@ assert 'repos_of_owner содержит менеджер', owner_repos.any? { |r
 assert 'repos_of_owner неизвестный аккаунт -> []', Dn1sup::Updater.repos_of_owner('nonexistent-user-000-zzz') == []
 
 # 19. Лог правок: коммиты между тегами (живой GitHub)
-cmts = Dn1sup::Updater.compare_commits('dn1test/dn1sup_time_project2', 'v0.4.1', 'v0.5.0', limit: 5)
+cmts = Dn1sup::Updater.compare_commits('dn1test/dn1sup_time_project', 'v0.4.1', 'v0.5.0', limit: 5)
 assert 'compare_commits возвращает сообщения', cmts.is_a?(Array) && cmts.any?, cmts.inspect
 assert 'compare_commits: непустые строки', cmts.all? { |m| m.is_a?(String) && !m.strip.empty? }
 assert 'compare_commits: несуществующие теги -> []',
-       Dn1sup::Updater.compare_commits('dn1test/dn1sup_time_project2', 'v9.9.9', 'v0.0.1') == []
+       Dn1sup::Updater.compare_commits('dn1test/dn1sup_time_project', 'v9.9.9', 'v0.0.1') == []
 
 puts "\n#{$failed.zero? ? 'ALL TESTS PASSED' : "#{$failed} FAILED"}"
 exit($failed.zero? ? 0 : 1)

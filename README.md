@@ -30,7 +30,7 @@
 ```json
 [
   { "id": "dn1sup_ext_manager",   "name": "DN1Sup Extension Store",    "repo": "dn1test/dn1sup_ext_manager" },
-  { "id": "dn1sup_time_project2", "name": "DN1Sup Time Project 2",     "repo": "dn1test/dn1sup_time_project2" },
+  { "id": "dn1sup_time_project",  "name": "DN1Sup Time Project",      "repo": "dn1test/dn1sup_time_project" },
   { "id": "dn1sup_create_project","name": "DN1Sup Create Project",     "repo": "dn1test/dn1sup_create_project" },
   { "id": "dn1sup_autoselect_tag","name": "DN1Sup AutoSelect Tag",     "repo": "dn1test/dn1sup_autoselect_tag" },
   { "id": "dn1sup_comp_add_view", "name": "DN1Sup Component Add View", "repo": "dn1test/dn1sup_comp_add_view" },
@@ -66,6 +66,9 @@ GitHub Release (тег v*) в репозитории каждого расшир
         ▼
   Sketchup.install_from_archive(path)   → установка расширения
 ```
+
+Как оформить репозиторий расширения, чтобы менеджер его находил и предлагал
+обновления, — см. [PUBLISHING.md](PUBLISHING.md).
 
 ---
 

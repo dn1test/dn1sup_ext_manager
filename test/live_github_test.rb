@@ -9,7 +9,7 @@ REPO = 'dn1test/dn1sup_ext_manager'
 OWNER = 'dn1test'
 CATALOG_IDS = %w[
   dn1sup_ext_manager
-  dn1sup_time_project2
+  dn1sup_time_project
   dn1sup_create_project
   dn1sup_autoselect_tag
   dn1sup_comp_add_view
@@ -105,33 +105,33 @@ CATALOG_IDS.each do |id|
 end
 
 # 5. Проверка Updater: старая версия расширения → предлагается новая
-tp_entry = reg_entries.find { |e| e['id'] == 'dn1sup_time_project2' }
+tp_entry = reg_entries.find { |e| e['id'] == 'dn1sup_time_project' }
 tp_ver = tp_entry && tp_entry['version'].to_s
-assert 'registry dn1sup_time_project2 содержит версию', !tp_ver.to_s.empty?, tp_ver
+assert 'registry dn1sup_time_project содержит версию', !tp_ver.to_s.empty?, tp_ver
 summary = Dn1sup::Updater.check!(
-  id: 'dn1sup_time_project2',
-  repo: 'dn1test/dn1sup_time_project2',
+  id: 'dn1sup_time_project',
+  repo: 'dn1test/dn1sup_time_project',
   version: '0.0.1',
-  asset: 'dn1sup_time_project2.rbz',
+  asset: 'dn1sup_time_project.rbz',
   force: true,
   silent: true
 )
 assert "Updater находит обновление #{tp_ver} при старой версии", summary.is_a?(Hash) && summary[:latest] == tp_ver, summary && summary[:latest]
 current_summary = Dn1sup::Updater.check!(
-  id: 'dn1sup_time_project2',
-  repo: 'dn1test/dn1sup_time_project2',
+  id: 'dn1sup_time_project',
+  repo: 'dn1test/dn1sup_time_project',
   version: tp_ver,
-  asset: 'dn1sup_time_project2.rbz',
+  asset: 'dn1sup_time_project.rbz',
   force: true,
   silent: true
 )
 assert 'Updater понимает, что версия уже актуальна (возвращает nil)', current_summary.nil?
 
-# 6. Лог правок: коммиты между соседними тегами time_project2
-tp_list = Dn1sup::Updater.releases('dn1test/dn1sup_time_project2', per_page: 10)
+# 6. Лог правок: коммиты между соседними тегами time_project
+tp_list = Dn1sup::Updater.releases('dn1test/dn1sup_time_project', per_page: 10)
 tags = tp_list.map { |r| r['tag_name'] }.uniq
 if tags.size >= 2
-  cmts = Dn1sup::Updater.compare_commits('dn1test/dn1sup_time_project2', tags[1], tags[0], limit: 10)
+  cmts = Dn1sup::Updater.compare_commits('dn1test/dn1sup_time_project', tags[1], tags[0], limit: 10)
   assert 'compare_commits возвращает лог правок между тегами', cmts.is_a?(Array) && cmts.any?, "#{cmts.size} коммитов"
 else
   assert 'compare_commits: у репозитория есть минимум 2 тега', false, tags.join(', ')
