@@ -33,7 +33,6 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
+          files: packages/dn1sup_ext_manager.rbz
           body_path: release_body.md
           generate_release_notes: true
-            packages/dn1sup_ext_manager.rbz
