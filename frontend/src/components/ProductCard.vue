@@ -47,8 +47,11 @@
           </span>
         </div>
 
+        <!-- Лог изменений — обязательная строка карточки, показывается ВСЕГДА
+             (пользователь должен знать, что изменилось). Без данных — явная
+             пометка, а не скрытие строки. -->
         <button
-          v-if="latestNote || commitList.length"
+          v-if="hasChangelog"
           class="w-full flex items-center gap-1 text-left text-[11px] leading-tight
                  text-slate-500 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 transition-colors"
           :title="changelogText"
@@ -58,6 +61,15 @@
           <span class="truncate flex-1">{{ latestNote || `Изменения: ${commitList.length}` }}</span>
           <ChevronDown :size="11" class="shrink-0 transition-transform" :class="{ 'rotate-180': changelogOpen }" />
         </button>
+        <div
+          v-else
+          class="w-full flex items-center gap-1 text-left text-[11px] leading-tight
+                 text-slate-400 dark:text-slate-600"
+          title="Лог изменений последнего релиза ещё не загружен — нажмите «Обновить» в шапке каталога"
+        >
+          <span class="shrink-0 font-medium">Что нового:</span>
+          <span class="truncate flex-1">нет данных</span>
+        </div>
       </div>
 
       <!-- Действия -->
@@ -178,13 +190,16 @@ const changelogText = computed(() =>
 )
 
 // Строка «Что нового» на карточке: первая строка последнего лога. Заглушка
-// «лог отсутствует» (нет данных о релизах — оффлайн-старт) строку не показывает.
+// «лог отсутствует» (нет данных о релизах) не считается логом — карточка
+// покажет пометку «нет данных», но сама строка не исчезает никогда.
 const latestNote = computed(() => {
   const raw = (p.value.changelog || '').trim()
   return raw && raw !== CHANGELOG_FALLBACK ? raw.split('\n')[0].trim() : ''
 })
 
 const commitList = computed(() => (Array.isArray(p.value.commits) ? p.value.commits : []))
+
+const hasChangelog = computed(() => !!(latestNote.value || commitList.value.length))
 
 const isBusy = computed(() => state.busy?.id === p.value.id)
 const busy = computed(() => (isBusy.value ? state.busy : null))

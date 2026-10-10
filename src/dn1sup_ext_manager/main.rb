@@ -508,17 +508,26 @@ module Dn1sup
     end
 
     # Извлечение персонального лога изменений для конкретного расширения.
-    # Источники по приоритету: тело предлагаемого релиза на GitHub; поле
+    # Источники по приоритету: тело предлагаемого релиза на GitHub; последний
+    # известный лог — первый релиз списка с непустым телом (пользователь должен
+    # видеть, что изменилось, даже если свежий релиз собран без тела); поле
     # 'changelog' записи реестра; верхняя секция CHANGELOG.md из ветки main
     # репозитория (кэшируется раз за сессию в fetch_and_render) — все текущие
     # релизы dn1sup_* созданы без тела, поэтому секция CHANGELOG — основной
     # запасной источник. Для показа в приложении — краткая суть (1-3 строки,
     # без markdown) через Dn1sup::Updater.short_notes; подробности остаются
     # в CHANGELOG и на GitHub.
-    def extract_extension_changelog(body, entry, repo = nil)
+    def extract_extension_changelog(body, entry, repo = nil, release_list = nil)
       id   = entry['id'].to_s
       name = entry['name'].to_s
       fallback = 'Лог изменений для этого расширения отсутствует.'
+
+      # Строка «Что нового» не должна исчезать: у релиза без тела показываем
+      # последний известный лог (списки релизов идут от новых к старым).
+      if !body.is_a?(String) || body.strip.empty?
+        known = Array(release_list).find { |r| r.is_a?(Hash) && !r['body'].to_s.strip.empty? }
+        body = known['body'] if known
+      end
 
       raw =
         if body.is_a?(String) && !body.strip.empty?
@@ -605,7 +614,7 @@ module Dn1sup
         author = repo.split('/').first.to_s if author.empty?
 
         # Персональный лог изменений для этого расширения
-        changelog = extract_extension_changelog(release_body, entry, repo)
+        changelog = extract_extension_changelog(release_body, entry, repo, rel_list)
 
         # Актуальная версия расширения: из тега релиза репозитория либо из реестра
         ext_target_ver = !latest_tag.empty? ? latest_tag.sub(/\Av/i, '') : entry['version'].to_s
