@@ -98,7 +98,7 @@ module UI
   end
 end
 
-IDYES = 2
+IDYES = 6
 IDNO  = 7
 MB_OK = 0
 MB_YESNO = 4
@@ -204,6 +204,47 @@ assert 'ExtManager::installed_version fallback read_default', Dn1sup::ExtManager
 
 assert 'тулбар создан с кнопкой каталога', $dialog_log.include?('TOOLBAR_ITEM')
 assert 'тулбар показан (restore)', $dialog_log.include?('TOOLBAR_RESTORE')
+
+# 10b. perform_uninstall: белый список id (path traversal) + сброс installed_at
+require 'fileutils'
+fake_plugins = Dir.mktmpdir
+File.write(File.join(fake_plugins, 'other_plugin.rb'), '# соседний плагин — должен выжить')
+FileUtils.mkdir_p(File.join(fake_plugins, 'dn1sup_save_settings'))
+File.write(File.join(fake_plugins, 'dn1sup_save_settings', 'main.rb'), '# плагин под удаление')
+File.write(File.join(fake_plugins, 'dn1sup_save_settings.rb'), '# loader под удаление')
+Sketchup.define_singleton_method(:find_support_file) { |name| name == 'Plugins' ? fake_plugins : nil }
+Sketchup.write_default('Dn1supUpdater', 'installed_at_dn1sup_save_settings', Time.now.to_i)
+
+['.', '..', '../evil', 'foo', ''].each do |bad|
+  r = Dn1sup::ExtManager.perform_uninstall(bad)
+  assert "uninstall отклоняет #{bad.inspect}", r['ok'] == false, r.inspect
+end
+r = Dn1sup::ExtManager.perform_uninstall('dn1sup_nosuch')
+assert 'uninstall отклоняет id вне реестра', r['ok'] == false, r.inspect
+assert 'после отклонений соседний плагин цел', File.file?(File.join(fake_plugins, 'other_plugin.rb'))
+
+r = Dn1sup::ExtManager.perform_uninstall('dn1sup_save_settings')
+assert 'uninstall валидного id проходит', r['ok'] == true, r.inspect
+assert 'файлы расширения удалены', !File.exist?(File.join(fake_plugins, 'dn1sup_save_settings')) &&
+                                   !File.exist?(File.join(fake_plugins, 'dn1sup_save_settings.rb'))
+assert 'installed_at сброшен', Sketchup.read_default('Dn1supUpdater', 'installed_at_dn1sup_save_settings', nil).nil?
+assert 'соседний плагин не тронут', File.file?(File.join(fake_plugins, 'other_plugin.rb'))
+Sketchup.singleton_class.send(:remove_method, :find_support_file)
+FileUtils.remove_entry(fake_plugins)
+
+# 10c. full_tag_name: полный тег из списка релизов, фолбэк v<version>
+Dn1sup::ExtManager.instance_variable_set(
+  :@releases_cache,
+  'dn1test/tag_repo' => [{ 'tag_name' => '0.4.1' }, { 'tag_name' => 'v2.4.1' }]
+)
+assert 'full_tag_name: тег без префикса берётся как есть',
+       Dn1sup::ExtManager.full_tag_name('dn1test/tag_repo', '0.4.1') == '0.4.1'
+assert 'full_tag_name: v-тег из списка',
+       Dn1sup::ExtManager.full_tag_name('dn1test/tag_repo', '2.4.1') == 'v2.4.1'
+assert 'full_tag_name: фолбэк v<version>',
+       Dn1sup::ExtManager.full_tag_name('dn1test/tag_repo', '9.9.9') == 'v9.9.9'
+assert 'full_tag_name: пустой список — фолбэк',
+       Dn1sup::ExtManager.full_tag_name('dn1test/other', '1.0.0') == 'v1.0.0'
 
 # 11. Проверка prompt_pick при нажатии Cancel (UI.inputbox возвращает false)
 assert 'prompt_pick обрабатывает false без исключений', Dn1sup::ExtManager.prompt_pick([{ 'name' => 'Test', 'installed_version' => nil }]).nil?

@@ -19,7 +19,7 @@ module Dn1sup
 
   module ExtManager
     ID      = 'dn1sup_ext_manager'
-    VERSION = '0.10.0'
+    VERSION = '0.10.2'
     REPO    = 'dn1test/dn1sup_ext_manager'
     ASSET   = "#{ID}.rbz"
     PAGE_URL     = "https://github.com/#{REPO}/releases"
@@ -37,6 +37,8 @@ module Dn1sup
     ICON_DIR     = File.join(PLUGIN_DIR, 'icons').freeze
     TOOLBAR_NAME = 'DN1Sup Extension Store'
     CMD_TOOLTIP  = 'DN1Sup Extension Store — каталог, установка и обновление расширений'
+    # Актуальная версия формата снапшота релизов (см. save/load_release_snapshot).
+    SNAPSHOT_VERSION = 4
 
     @dialog = nil
     @release_cache = {}   # repo => предлагаемый (новейший стабильный) релиз
@@ -70,7 +72,15 @@ module Dn1sup
           raw = File.read(registry_path)
         end
       end
-      raw ||= Dn1sup::Updater.fetch_text(REGISTRY_URL)
+      if raw.nil?
+        # Сетевой фолбэк — один раз за сессию (успех или неудача): реестр без
+        # файла на диске — аварийный режим, и повторные таймауты на каждом
+        # рендере каталога замораживали бы UI.
+        unless instance_variable_defined?(:@registry_net_fetch)
+          @registry_net_fetch = Dn1sup::Updater.fetch_text(REGISTRY_URL)
+        end
+        raw = @registry_net_fetch
+      end
       unless raw
         Dn1sup::Updater.log_error(RuntimeError.new("Реестр недоступен: ни #{registry_path}, ни #{REGISTRY_URL}"))
         return []
@@ -377,7 +387,7 @@ module Dn1sup
       return unless path
 
       data = {
-        'version'    => 4,
+        'version'    => SNAPSHOT_VERSION,
         'saved_at'   => Time.now.to_i,
         'releases'   => {},
         'discovered' => @discovered_entries,
@@ -416,6 +426,10 @@ module Dn1sup
 
       data = JSON.parse(File.read(path))
       return unless data.is_a?(Hash)
+
+      # Снапшот более нового формата не читаем по догадкам: прежние поля
+      # могут иметь другой смысл.
+      return if data['version'].to_i > SNAPSHOT_VERSION
 
       if data['discovered'].is_a?(Array) && @discovered_entries.empty?
         @discovered_entries = data['discovered'].find_all do |e|
@@ -666,6 +680,17 @@ module Dn1sup
       return { 'ok' => false, 'error' => 'DN1Sup Extension Store нельзя удалить из самого себя. Используйте Window → Extension Manager.' } if id.to_s == ID
       return { 'ok' => false, 'error' => 'SketchUp недоступен.' } unless defined?(Sketchup)
 
+      # id приходит из диалога и уходит в FileUtils.rm_rf: без белого списка
+      # значение "."/".." снесло бы всю папку Plugins.
+      unless id.to_s =~ /\Adn1sup_[a-z0-9_]+\z/
+        store_log("удаление отклонено: некорректный id #{id.inspect}")
+        return { 'ok' => false, 'error' => "Некорректный идентификатор расширения." }
+      end
+      unless find_entry(id)
+        store_log("удаление '#{id}': расширение не найдено в реестре")
+        return { 'ok' => false, 'error' => "Расширение «#{id}» не найдено в реестре." }
+      end
+
       plugins_dir = Sketchup.find_support_file('Plugins')
       return { 'ok' => false, 'error' => 'Папка Plugins не найдена.' } unless plugins_dir && File.directory?(plugins_dir)
 
@@ -686,9 +711,11 @@ module Dn1sup
       FileUtils.rm_f(rb_file) if File.file?(rb_file)
       FileUtils.rm_rf(sub_dir) if File.directory?(sub_dir)
 
-      # 3. Сбрасываем кэш версий
+      # 3. Сбрасываем кэш версий (включая installed_at — иначе после
+      # переустановки старой сборки даты сравнивались бы с прошлой установкой)
       Sketchup.write_default('DN1Sup ExtManager', "installed_#{id}", nil)
       Sketchup.write_default('Dn1supUpdater', "last_#{id}", 0)
+      Sketchup.write_default('Dn1supUpdater', "installed_at_#{id}", nil)
 
       store_log("удалён #{id} из Plugins")
       { 'ok' => true, 'message' => "Расширение «#{id}» удалено из папки Plugins. Запись в меню исчезнет после перезапуска SketchUp." }
@@ -824,6 +851,17 @@ module Dn1sup
     # Логи правок: для продуктов с обновлением/сменой версии подтягиваем
     # список коммитов между установленной и предлагаемой версиями
     # (compare API). Только сеть в фоне; результат — на главном потоке.
+    #
+    # Версии в каталоге хранятся без префикса, а теги бывают и без «v» —
+    # полный тег берём из списка релизов, иначе compare по несуществующему
+    # «v…» молча вернул бы пусто.
+    def full_tag_name(repo, version)
+      hit = @releases_cache[repo.to_s].to_a.find do |r|
+        r.is_a?(Hash) && r['tag_name'].to_s.sub(/\Av/i, '') == version.to_s
+      end
+      hit ? hit['tag_name'] : "v#{version}"
+    end
+
     def fetch_commits_async(dlg)
       pending = []
       collect_products_data(false, check_releases: false).each do |p|
@@ -844,7 +882,10 @@ module Dn1sup
           result = {}
           pending.each do |item|
             msgs = Dn1sup::Updater.compare_commits(
-              item['repo'], "v#{item['installed']}", "v#{item['offered']}", limit: 15
+              item['repo'],
+              full_tag_name(item['repo'], item['installed']),
+              full_tag_name(item['repo'], item['offered']),
+              limit: 15
             )
             result[item['repo']] = item.merge('messages' => msgs) unless msgs.empty?
           end
@@ -1130,7 +1171,7 @@ module Dn1sup
     # SVG-иконка поддерживается тулбарами начиная с SketchUp 2020.1 (v20);
     # на старых версиях используем PNG 16/24.
     def svg_icons_supported?
-      Sketchup.respond_to?(:version) && Sketchup.version.to_i >= 20
+      Sketchup.respond_to?(:version) && Sketchup.version.to_f >= 20.1
     end
 
     def small_icon_path

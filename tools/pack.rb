@@ -128,6 +128,12 @@ def pack(id, source, shared_updater, reg_path)
     DEV_EXCLUDE_DIRS.each  { |d| FileUtils.rm_rf(File.join(stage_plugin_dir, d)) }
 
     # 6. Архивация в .rbz
+    # Dir.glob трактует '\' как escape-символ, поэтому пути стадии на Windows
+    # нормализуем в '/': иначе rubyzip-ветка молча упаковывала пустой архив.
+    prefix = "#{stage}/".gsub('\\', '/')
+    staged_files = Dir["#{prefix}**/*"].count { |p| File.file?(p) }
+    raise "Стадия сборки неполная: #{staged_files} файлов (ожидалось не менее 8)" if staged_files < 8
+
     zip_ok = false
     if system('zip', '-qr', out, '.', chdir: stage)
       zip_ok = true
@@ -138,15 +144,15 @@ def pack(id, source, shared_updater, reg_path)
         raise 'Не найден ни системный zip, ни гем rubyzip. Установите zip в PATH или `gem install rubyzip`.'
       end
       Zip::File.open(out, create: true) do |zipfile|
-        Dir[File.join(stage, '**', '*')].each do |path|
+        Dir["#{prefix}**/*"].each do |path|
           next if File.directory?(path)
-          zipfile.add(path.delete_prefix("#{stage}/"), path)
+          zipfile.add(path.gsub('\\', '/').delete_prefix(prefix), path)
         end
       end
       zip_ok = true
     end
 
-    raise "Ошибка архивации #{out}" unless zip_ok && File.file?(out)
+    raise "Ошибка архивации #{out}" unless zip_ok && File.file?(out) && File.size(out) > 1024
   end
 
   puts "  -> packages/#{id}.rbz (#{File.size(out)} bytes)"

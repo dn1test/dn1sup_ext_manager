@@ -48,7 +48,7 @@ end
 def write_png(path, pixels, width, height)
   raw = pixels.map { |row| "\x00" + row.map { |px| px.pack('C4') }.join }.join
   png = "\x89PNG\r\n\x1a\n".b +
-        png_chunk('IHDR', [width, height, 8, 6, 0, 0, 0].pack('N5')) +
+        png_chunk('IHDR', [width, height].pack('N2') + [8, 6, 0, 0, 0].pack('C5')) +
         png_chunk('IDAT', Zlib::Deflate.deflate(raw, Zlib::BEST_COMPRESSION)) +
         png_chunk('IEND', '')
   File.binwrite(path, png)
