@@ -4,7 +4,7 @@
     :class="{ 'es-card-update': p.has_update || p.status === 'switch' }"
   >
     <div class="flex items-center gap-2 px-3 py-1.5">
-      <Puzzle :size="14" class="text-slate-400 dark:text-slate-500 shrink-0" :title="p.id" />
+      <component :is="productIcon(p.id)" :size="15" class="shrink-0" :class="productIconClass(p.id)" :title="p.id" />
 
       <!-- Название + id -->
       <div class="flex items-center gap-2 min-w-0 flex-1" :title="p.description || p.id">
@@ -108,9 +108,10 @@
 
 <script setup>
 import { computed } from 'vue'
-import { Puzzle, Loader2, Zap, RotateCw, Download, Trash2, ArrowLeftRight, Sparkles, EyeOff } from 'lucide-vue-next'
+import { Loader2, Zap, RotateCw, Download, Trash2, ArrowLeftRight, Sparkles, EyeOff } from 'lucide-vue-next'
 import { state, install, update, confirmUninstall, hide } from '../composables/useSketchupBridge'
 import { useProductStatus } from '../composables/useProductStatus'
+import { productIcon, productIconClass } from '../composables/useProductIcon'
 
 const props = defineProps({ product: { type: Object, required: true } })
 const p = computed(() => props.product)

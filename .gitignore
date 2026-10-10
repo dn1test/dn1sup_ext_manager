@@ -5,4 +5,4 @@
 /dn1sup_updater.rb
 frontend/node_modules/
 .orca-preparing/
-"/src/dist/"  
+/src/dist/

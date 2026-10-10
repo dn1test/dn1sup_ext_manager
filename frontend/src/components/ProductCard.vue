@@ -7,7 +7,7 @@
                flex items-center justify-center shrink-0"
         :title="p.id"
       >
-        <Puzzle :size="18" class="text-slate-400 dark:text-slate-500" />
+        <component :is="productIcon(p.id)" :size="18" :class="productIconClass(p.id)" />
       </div>
 
       <!-- Информация -->
@@ -173,10 +173,11 @@
 <script setup>
 import { computed, ref } from 'vue'
 import {
-  Puzzle, ChevronDown, Loader2, Zap, RotateCw, Download, Trash2, ArrowLeftRight, Sparkles, EyeOff, User
+  ChevronDown, Loader2, Zap, RotateCw, Download, Trash2, ArrowLeftRight, Sparkles, EyeOff, User
 } from 'lucide-vue-next'
 import { state, install, update, confirmUninstall, hide } from '../composables/useSketchupBridge'
 import { useProductStatus } from '../composables/useProductStatus'
+import { productIcon, productIconClass } from '../composables/useProductIcon'
 
 const props = defineProps({ product: { type: Object, required: true } })
 const p = computed(() => props.product)

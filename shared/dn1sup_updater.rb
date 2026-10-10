@@ -262,7 +262,9 @@ module Dn1sup
     def fetch_text(url)
       require 'net/http'
       res = http_get(url)
-      res.is_a?(Net::HTTPSuccess) ? res.body.to_s : nil
+      # Тело без charset приходит в ASCII-8BIT, а тексты GitHub (registry.json,
+      # CHANGELOG.md) — UTF-8: приводим явно, иначе кириллица ломает regex/сравнения.
+      res.is_a?(Net::HTTPSuccess) ? res.body.to_s.force_encoding(Encoding::UTF_8) : nil
     rescue StandardError, ScriptError => e
       log_error(e)
       nil

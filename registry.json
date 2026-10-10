@@ -5,7 +5,7 @@
     "author": "DN1Sup",
     "description": "Каталог расширений DN1Sup: установка, обновление и удаление плагинов из GitHub Releases",
     "repo": "dn1test/dn1sup_ext_manager",
-    "version": "0.11.1"
+    "version": "0.11.2"
   },
   {
     "id": "dn1sup_time_project",
