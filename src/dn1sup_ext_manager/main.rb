@@ -7,7 +7,9 @@ rescue LoadError
 end
 require 'json'
 require 'fileutils'
-Sketchup.require 'dn1sup_ext_manager/dn1sup_updater'
+# Апдейтер — из папки расширения (PLUGIN_DIR-относительный путь): в dev-варианте
+# (<id>_dev/) иначе загрузился бы апдейтер прод-установки из Plugins/<id>/.
+Sketchup.require File.join(File.dirname(__FILE__), 'dn1sup_updater')
 
 module Dn1sup
   def self.common_menu
@@ -19,7 +21,7 @@ module Dn1sup
 
   module ExtManager
     ID      = 'dn1sup_ext_manager'
-    VERSION = '0.10.2'
+    VERSION = '0.11.0'
     REPO    = 'dn1test/dn1sup_ext_manager'
     ASSET   = "#{ID}.rbz"
     PAGE_URL     = "https://github.com/#{REPO}/releases"
@@ -45,6 +47,9 @@ module Dn1sup
     @releases_cache = {}  # repo => [релизы] — полный список для статусов
     @discovered_entries = [] # найденные на GitHub расширения вне registry.json
     @commits_cache = {}   # repo => {'installed'=>..,'offered'=>..,'messages'=>[...]}
+    # Верхняя секция CHANGELOG.md из ветки main репозитория (repo => текст):
+    # резервный источник «Что нового», когда у релиза пустое тело.
+    @changelog_md_cache = {}
     # Результаты проверки существования репозиториев на GitHub:
     # repo => {'status'=>'ok'|'gone'|'renamed','renamed_to'=>'','checked_at'=>unixtime}.
     # gone/renamed — карточки убираются из установки/обновлений (установленные
@@ -432,8 +437,14 @@ module Dn1sup
       return if data['version'].to_i > SNAPSHOT_VERSION
 
       if data['discovered'].is_a?(Array) && @discovered_entries.empty?
+        # Самовосстановление: найденные записи мёртвых/перемещённых репозиториев
+        # (снапшот старой версии или внешний мусор) не resurrect-им.
+        stale = data['stale'].is_a?(Hash) ? data['stale'] : {}
         @discovered_entries = data['discovered'].find_all do |e|
-          e.is_a?(Hash) && !e['id'].to_s.empty? && !e['repo'].to_s.empty?
+          next false unless e.is_a?(Hash) && !e['id'].to_s.empty? && !e['repo'].to_s.empty?
+
+          info = stale[e['repo'].to_s]
+          !(info.is_a?(Hash) && %w[gone renamed].include?(info['status'].to_s))
         end
       end
       if data['commits'].is_a?(Hash) && @commits_cache.empty?
@@ -481,10 +492,30 @@ module Dn1sup
       assets.find { |a| a['name'].to_s.end_with?('.rbz') }
     end
 
+    # Верхняя (свежая) секция CHANGELOG.md: от первого заголовка с номером
+    # версии до заголовка того же или более высокого уровня. Строки заголовков
+    # выбрасываются — карточке нужна суть изменений, а не «[0.2.0] — дата».
+    def latest_changelog_section(md)
+      text = md.to_s
+      head = text.match(/^[#]{1,6}\s+[^\n]*\d+\.\d+[^\n]*$/)
+      return '' unless head
+
+      level = head.to_s[/\A#+/].length
+      tail = text[head.end(0)..].to_s
+      nxt = tail.match(/^#{'[#]' * level}\s+/)
+      section = nxt ? tail[0...nxt.begin(0)] : tail
+      section.gsub(/^[#]{1,6}\s+[^\n]*(\n|\z)/, '').strip
+    end
+
     # Извлечение персонального лога изменений для конкретного расширения.
-    # Для показа в приложении — краткая суть (1-3 строки, без markdown) через
-    # Dn1sup::Updater.short_notes; подробности остаются в CHANGELOG и на GitHub.
-    def extract_extension_changelog(body, entry)
+    # Источники по приоритету: тело предлагаемого релиза на GitHub; поле
+    # 'changelog' записи реестра; верхняя секция CHANGELOG.md из ветки main
+    # репозитория (кэшируется раз за сессию в fetch_and_render) — все текущие
+    # релизы dn1sup_* созданы без тела, поэтому секция CHANGELOG — основной
+    # запасной источник. Для показа в приложении — краткая суть (1-3 строки,
+    # без markdown) через Dn1sup::Updater.short_notes; подробности остаются
+    # в CHANGELOG и на GitHub.
+    def extract_extension_changelog(body, entry, repo = nil)
       id   = entry['id'].to_s
       name = entry['name'].to_s
       fallback = 'Лог изменений для этого расширения отсутствует.'
@@ -502,10 +533,11 @@ module Dn1sup
             body.strip
           end
         else
-          entry['changelog'].to_s.strip
+          entry_changelog = entry['changelog'].to_s.strip
+          entry_changelog.empty? ? latest_changelog_section(@changelog_md_cache[repo.to_s]) : entry_changelog
         end
 
-      return fallback if raw.empty?
+      return fallback if raw.strip.empty?
 
       Dn1sup::Updater.short_notes(raw)
     end
@@ -568,8 +600,12 @@ module Dn1sup
           desc = offered['name'].to_s
         end
 
+        # Автор: из реестра, фолбэк — владелец репозитория на GitHub
+        author = entry['author'].to_s
+        author = repo.split('/').first.to_s if author.empty?
+
         # Персональный лог изменений для этого расширения
-        changelog = extract_extension_changelog(release_body, entry)
+        changelog = extract_extension_changelog(release_body, entry, repo)
 
         # Актуальная версия расширения: из тега релиза репозитория либо из реестра
         ext_target_ver = !latest_tag.empty? ? latest_tag.sub(/\Av/i, '') : entry['version'].to_s
@@ -593,6 +629,7 @@ module Dn1sup
           'id'                => id,
           'name'              => name,
           'description'       => desc,
+          'author'            => author,
           'repo'              => repo,
           'asset'             => asset_name,
           'discovered'        => !!entry['discovered'],
@@ -686,6 +723,13 @@ module Dn1sup
         store_log("удаление отклонено: некорректный id #{id.inspect}")
         return { 'ok' => false, 'error' => "Некорректный идентификатор расширения." }
       end
+      # dev-варианты (<id>_dev, пометка «… [DEV]») ставятся и обновляются только
+      # инструментом разработки sketchup-dev-mcp из папки разработки — Store
+      # ими не управляет (и не распространяет их)
+      if id.to_s.end_with?('_dev')
+        store_log("удаление отклонено: dev-вариант #{id.inspect} управляется sketchup-dev-mcp")
+        return { 'ok' => false, 'error' => "«#{id}» — dev-вариант: он ставится и удаляется инструментом разработки (sketchup-dev-mcp), Store им не управляет." }
+      end
       unless find_entry(id)
         store_log("удаление '#{id}': расширение не найдено в реестре")
         return { 'ok' => false, 'error' => "Расширение «#{id}» не найдено в реестре." }
@@ -769,7 +813,7 @@ module Dn1sup
       want_discovery = discovery_due?(force)
       Dn1sup::Updater.defer_async(
         lambda do
-          result = { 'releases' => {}, 'discovered' => nil, 'stale' => {} }
+          result = { 'releases' => {}, 'discovered' => nil, 'stale' => {}, 'changelogs' => {} }
           now = Time.now.to_i
           repos.each do |repo|
             repo_str = repo.to_s
@@ -791,6 +835,16 @@ module Dn1sup
 
             list = releases_list(repo_str, force)
             result['releases'][repo_str] = list unless list.empty?
+
+            # Резерв «Что нового»: CHANGELOG.md из ветки main — раз за сессию
+            # на репозиторий. Сеть — только в этом фоновом потоке. nil (таймаут,
+            # другая сетевая ошибка) не кэшируем — retry при следующем обновлении.
+            unless @changelog_md_cache.key?(repo_str)
+              md = Dn1sup::Updater.fetch_text(
+                "https://raw.githubusercontent.com/#{repo_str}/main/CHANGELOG.md"
+              )
+              result['changelogs'][repo_str] = md unless md.nil?
+            end
           end
           renamed_found = result['stale'].values.any? { |m| m.is_a?(Hash) && m[:renamed] }
           # Переименование обнаружено вне окна автопоиска — новый репозиторий
@@ -828,6 +882,8 @@ module Dn1sup
           if lists.is_a?(Hash) && lists.any?
             @releases_cache.merge!(lists)
           end
+          changelogs = fetched['changelogs'].is_a?(Hash) ? fetched['changelogs'] : {}
+          @changelog_md_cache.merge!(changelogs) unless changelogs.empty?
           save_release_snapshot
           push_state(dlg, collect_products_data(false, check_releases: false))
 

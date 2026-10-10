@@ -1,0 +1,39 @@
+# AGENTS.md — правила каналов dev / prod («DN1Sup Extension Store»)
+
+Обязательные правила установки и распространения расширения `dn1sup_ext_manager` («DN1Sup Extension Store»).
+Действуют в каждой сессии агента в этом репозитории. Реализовано инструментами
+MCP-сервера sketchup-dev-mcp; публикационная сторона — в PUBLISHING.md менеджера
+dn1sup_ext_manager.
+
+| | dev-вариант | prod-вариант |
+|---|---|---|
+| id / имя | `dn1sup_ext_manager_dev` / «DN1Sup Extension Store [DEV]» | `dn1sup_ext_manager` / «DN1Sup Extension Store» |
+| Ставится и обновляется | только sketchup-dev-mcp из папки разработки: `ext_install id=dn1sup_ext_manager` → `ext_reload id=dn1sup_ext_manager_dev` | только GitHub Releases (тег `vX.Y.Z` + `.rbz` через CI), обновляет dn1sup_ext_manager |
+| Распространение | никогда не публикуется | релизы этого репозитория |
+
+1. **Суффикс `_dev` зарезервирован**: id с `_dev` никогда не публикуются — не
+   создавать для них релизы, `.rbz` и записи в registry.json каталога
+   (`ext_pack` откажется собирать).
+2. **Dev-цикл** (машина разработки): правка → `ext_check id=dn1sup_ext_manager` →
+   `ext_install id=dn1sup_ext_manager` (по умолчанию канал dev) →
+   `ext_reload id=dn1sup_ext_manager_dev` (сам подтянет свежий код из dev-папки и
+   выгрузит прод-двойник из сессии) → `ext_test id=dn1sup_ext_manager_dev` → `view_png`.
+   Файлы прода в Plugins руками не трогать.
+3. **Релиз** — только при зелёных тестах: поднять версию сразу в трёх местах
+   (`ext.version` регистратора, `.sketchup_dev.json`, `registry.json` — pack
+   проверяет расхождения), `ext_pack id=dn1sup_ext_manager` → коммит + тег `v<версия>` →
+   CI соберёт `.rbz` и создаст Release. Релизный `.rbz` ставить через
+   `ext_install_rbz`, не копированием файлов.
+4. **Один неймспейс — один канал в сессии**: код у каналов общий, одновременно
+   грузится только один. Переключение — `ext_reload` нужного канала; не
+   включать оба в Extension Manager (сгенерированный dev-регистратор не
+   загрузится и покажет уведомление).
+5. **Манифест `.sketchup_dev.json`** в кодовой папке (id/display_name/
+   namespace/version) обязателен: по нему генерируется dev-регистратор и
+   работает выгрузка неймспейса. В `.rbz` манифест не попадает (pack исключает
+   скрытые файлы) — не добавлять руками.
+6. **Настройки (prefs) у каналов общие** — dev-вариант тестирует реальные
+   данные пользователя.
+7. **Self-update в dev-установке отключён**: `dn1sup_updater` рядом с маркером
+   `.sketchup_dev.json` молча пропускает проверку обновлений — обновления
+   dev-канала приходят только из dev-папки. Логику не менять, маркер не удалять.

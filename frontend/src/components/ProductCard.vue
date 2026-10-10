@@ -37,18 +37,27 @@
           {{ p.description || '—' }}
         </p>
 
-        <div class="flex items-center gap-2.5 text-[11px] text-slate-400 dark:text-slate-500">
+        <div class="flex items-center gap-2.5 text-[11px] text-slate-400 dark:text-slate-500 mb-1">
+          <span v-if="p.author" class="inline-flex items-center gap-1" :title="`Автор: ${p.author}`">
+            <User :size="11" />
+            {{ p.author }}
+          </span>
           <span class="font-mono" :title="versionTitle">
             {{ versionText }}
           </span>
-          <button
-            class="text-brand-600 dark:text-brand-400 font-medium hover:underline underline-offset-2 text-left"
-            @click="changelogOpen = !changelogOpen"
-          >
-            <span>Что нового</span>
-            <ChevronDown :size="10" class="inline-block ml-0.5 transition-transform" :class="{ 'rotate-180': changelogOpen }" />
-          </button>
         </div>
+
+        <button
+          v-if="latestNote || commitList.length"
+          class="w-full flex items-center gap-1 text-left text-[11px] leading-tight
+                 text-slate-500 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 transition-colors"
+          :title="changelogText"
+          @click="changelogOpen = !changelogOpen"
+        >
+          <span class="shrink-0 font-medium">Что нового:</span>
+          <span class="truncate flex-1">{{ latestNote || `Изменения: ${commitList.length}` }}</span>
+          <ChevronDown :size="11" class="shrink-0 transition-transform" :class="{ 'rotate-180': changelogOpen }" />
+        </button>
       </div>
 
       <!-- Действия -->
@@ -152,7 +161,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import {
-  Puzzle, ChevronDown, Loader2, Zap, RotateCw, Download, Trash2, ArrowLeftRight, Sparkles, EyeOff
+  Puzzle, ChevronDown, Loader2, Zap, RotateCw, Download, Trash2, ArrowLeftRight, Sparkles, EyeOff, User
 } from 'lucide-vue-next'
 import { state, install, update, confirmUninstall, hide } from '../composables/useSketchupBridge'
 import { useProductStatus } from '../composables/useProductStatus'
@@ -160,11 +169,20 @@ import { useProductStatus } from '../composables/useProductStatus'
 const props = defineProps({ product: { type: Object, required: true } })
 const p = computed(() => props.product)
 
+const CHANGELOG_FALLBACK = 'Лог изменений для этого расширения отсутствует.'
+
 const changelogOpen = ref(false)
 
 const changelogText = computed(() =>
-  (p.value.changelog || '').trim() || 'Лог изменений для этого расширения отсутствует.'
+  (p.value.changelog || '').trim() || CHANGELOG_FALLBACK
 )
+
+// Строка «Что нового» на карточке: первая строка последнего лога. Заглушка
+// «лог отсутствует» (нет данных о релизах — оффлайн-старт) строку не показывает.
+const latestNote = computed(() => {
+  const raw = (p.value.changelog || '').trim()
+  return raw && raw !== CHANGELOG_FALLBACK ? raw.split('\n')[0].trim() : ''
+})
 
 const commitList = computed(() => (Array.isArray(p.value.commits) ? p.value.commits : []))
 

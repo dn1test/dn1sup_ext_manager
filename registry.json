@@ -2,32 +2,51 @@
   {
     "id": "dn1sup_ext_manager",
     "name": "DN1Sup Extension Store",
+    "author": "DN1Sup",
+    "description": "Каталог расширений DN1Sup: установка, обновление и удаление плагинов из GitHub Releases",
     "repo": "dn1test/dn1sup_ext_manager",
-    "version": "0.10.2"
+    "version": "0.11.0"
   },
   {
     "id": "dn1sup_time_project",
     "name": "DN1Sup Time Project",
+    "author": "DN1Sup",
+    "description": "Учёт активного времени работы над проектом: статистика по дням, часам и дням недели хранится в файле модели (.skp)",
     "repo": "dn1test/dn1sup_time_project"
   },
   {
     "id": "dn1sup_create_project",
     "name": "DN1Sup Create Project",
+    "author": "DN1Sup",
+    "description": "Создание и оформление мебельных проектов: структура папок, карточка проекта с историей, картинки и документы",
     "repo": "dn1test/dn1sup_create_project"
   },
   {
     "id": "dn1sup_autoselect_tag",
     "name": "DN1Sup AutoSelect Tag",
+    "author": "DN1Sup",
+    "description": "Автоматически назначает теги (слои) размерам, текстовым меткам и компонентам по настраиваемым правилам",
     "repo": "dn1test/dn1sup_autoselect_tag"
   },
   {
     "id": "dn1sup_comp_add_view",
     "name": "DN1Sup Component Add View",
+    "author": "DN1Sup",
+    "description": "Быстрые копии компонента со сдвигом и поворотом, генерация проекций (вид сверху и вид сбоку)",
     "repo": "dn1test/dn1sup_comp_add_view"
   },
   {
     "id": "dn1sup_save_settings",
     "name": "DN1Sup Save Settings",
+    "author": "DN1Sup",
+    "description": "Сохранение параметров SketchUp в zip-архив и восстановление из архива",
     "repo": "dn1test/dn1sup_save_settings"
+  },
+  {
+    "id": "dn1sup_export_3d",
+    "name": "DN1Sup Export 3D",
+    "author": "DN1Sup",
+    "description": "Экспорт моделей или текущего выделения в glTF/GLB с интерактивным просмотром в браузере или прямо в SketchUp (Three.js)",
+    "repo": "dn1test/dn1sup_export_3d"
   }
 ]

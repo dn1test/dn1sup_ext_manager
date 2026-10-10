@@ -50,6 +50,7 @@ module Dn1sup
     def check!(cfg)
       id_str = cfg[:id].to_s
       return nil if @checking[id_str]
+      return nil if dev_install?
 
       @checking[id_str] = true
 
@@ -81,6 +82,17 @@ module Dn1sup
       else
         done.call(work.call)
       end
+    end
+
+    # DEV-канал: расширение установлено sketchup-dev-mcp из папки разработки —
+    # рядом с этим файлом лежит .sketchup_dev.json (в rbz он не попадает:
+    # pack-скрипты исключают скрытые файлы). Обновления такой установки
+    # приходят только из dev-папки (ext_install / ext_reload), поэтому
+    # self-update из GitHub Releases отключён.
+    def dev_install?
+      File.exist?(File.join(File.dirname(__FILE__), '.sketchup_dev.json'))
+    rescue StandardError
+      false
     end
 
     # GET https://api.github.com/repos/{owner}/{repo}/releases/latest

@@ -33,6 +33,7 @@ module Sketchup
   def require(path)
     base = File.expand_path('..', __dir__)
     candidates = [
+      path, # путь как есть (абсолютный: main.rb грузит updater из своей папки)
       File.join(base, 'src', path + '.rb'),
       File.join(base, 'src', path, path + '.rb'),
       File.join(base, 'gh-extensions', 'src', path + '.rb'),
@@ -49,8 +50,12 @@ module Sketchup
     '24.0.0'
   end
 
+  # Песочница вместо реального %TEMP%: снапшот каталога и логи теста не
+  # должны задевать живые файлы Store (dn1sup_ext_releases.json и т.п.).
+  $smoke_tmp = Dir.mktmpdir('dn1sup_smoke')
+
   def temp_dir
-    Dir.tmpdir
+    $smoke_tmp
   end
 
   def install_from_archive(path, _show_warning = true)
@@ -249,9 +254,27 @@ assert 'full_tag_name: пустой список — фолбэк',
 # 11. Проверка prompt_pick при нажатии Cancel (UI.inputbox возвращает false)
 assert 'prompt_pick обрабатывает false без исключений', Dn1sup::ExtManager.prompt_pick([{ 'name' => 'Test', 'installed_version' => nil }]).nil?
 
+# 11b. latest_changelog_section: верхняя секция CHANGELOG.md (резерв «Что нового»)
+sample_md = [
+  '# Changelog', '', '## Unreleased', '', '## [0.2.0] — 2026-10-10',
+  '- fix: правка два', '- feat: фича один', '', '### dn1sup_demo', '', '- внутренняя заметка', '',
+  '## [0.1.0] — 2026-10-09', '- старт', ''
+].join("\n")
+section = Dn1sup::ExtManager.latest_changelog_section(sample_md)
+assert 'latest_changelog_section: пропускает заголовки без версии (Unreleased)',
+       !section.include?('Unreleased') && !section.include?('0.1.0')
+assert 'latest_changelog_section: берёт тело верхней секции без строк заголовков',
+       section.include?('fix: правка два') && section.include?('внутренняя заметка') &&
+       !section.include?('0.2.0') && !section.include?('dn1sup_demo')
+assert 'latest_changelog_section: не заходит в следующую секцию',
+       !section.include?('старт')
+assert 'latest_changelog_section: пустой ввод — пустая секция',
+       Dn1sup::ExtManager.latest_changelog_section('').empty? &&
+       Dn1sup::ExtManager.latest_changelog_section(nil).empty?
+
 # 12. Проверка мгновенного сбора каталога без сети (offline mode)
 offline_products = Dn1sup::ExtManager.collect_products_data(false, check_releases: false)
-assert 'collect_products_data offline возвращает все расширения из реестра', offline_products.size == 6
+assert 'collect_products_data offline возвращает все расширения из реестра', offline_products.size == Dn1sup::ExtManager.load_registry.size
 assert 'collect_products_data offline содержит id dn1sup_ext_manager', offline_products.any? { |p| p['id'] == 'dn1sup_ext_manager' }
 assert 'collect_products_data offline содержит id dn1sup_comp_add_view', offline_products.any? { |p| p['id'] == 'dn1sup_comp_add_view' }
 assert 'collect_products_data offline содержит id dn1sup_create_project', offline_products.any? { |p| p['id'] == 'dn1sup_create_project' }
@@ -380,6 +403,9 @@ begin
   assert 'unhide_all_repos: pref очищен', Dn1sup::ExtManager.hidden_repos.empty?
 
   # Снапшот v3: найденные расширения и коммиты переживают перезапуск
+  assert 'снапшот пишется в песочницу, не в живой %TEMP%',
+         Dn1sup::ExtManager.snapshot_path.to_s.start_with?($smoke_tmp),
+         Dn1sup::ExtManager.snapshot_path.to_s
   Dn1sup::ExtManager.save_release_snapshot
   Dn1sup::ExtManager.instance_variable_set(:@discovered_entries, [])
   Dn1sup::ExtManager.instance_variable_set(:@commits_cache, {})
@@ -507,6 +533,19 @@ begin
   Dn1sup::ExtManager.load_release_snapshot
   assert 'снапшот v4: stale восстановлен',
          Dn1sup::ExtManager.instance_variable_get(:@stale_repos)['dn1test/dn1sup_dummy_found']['status'] == 'gone'
+
+  # Самовосстановление: discovered-запись мёртвого репозитория из снапшота
+  # (например, записанная версией без stale-логики) не resurrect-ится.
+  data['discovered'] = [discovered_fixture[0]]
+  File.write(Dn1sup::ExtManager.snapshot_path, JSON.generate(data))
+  Dn1sup::ExtManager.instance_variable_set(:@discovered_entries, [])
+  Dn1sup::ExtManager.instance_variable_set(:@stale_repos, {})
+  Dn1sup::ExtManager.instance_variable_set(:@release_cache, {})
+  Dn1sup::ExtManager.instance_variable_set(:@releases_cache, {})
+  Dn1sup::ExtManager.load_release_snapshot
+  assert 'снапшот: discovered мёртвого репо не восстановлен',
+         Dn1sup::ExtManager.merged_entries.none? { |e| e['id'] == 'dn1sup_dummy_found' }
+  data['discovered'] = []
 
   # Старый формат v3 (без stale) читается, stale остаётся пустым
   data.delete('stale')
