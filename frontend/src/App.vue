@@ -1,6 +1,14 @@
 <template>
   <div class="h-full flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 transition-colors">
-    <Header :version="state.version" :refreshing="refreshing" v-model:view="view" @refresh="onRefresh" />
+    <Header
+      :version="state.version"
+      :refreshing="refreshing"
+      :channel="state.channel"
+      :switching="state.channelBusy"
+      v-model:view="view"
+      @refresh="onRefresh"
+      @set-channel="setChannel"
+    />
 
     <!-- Поиск и фильтры -->
     <div class="px-3.5 pt-2 pb-2 flex items-center gap-2 shrink-0">
@@ -130,7 +138,7 @@ import { Search, SearchX, Loader2, Hourglass, RotateCw, CheckCircle2, AlertCircl
 import Header from './components/Header.vue'
 import ProductCard from './components/ProductCard.vue'
 import ProductRow from './components/ProductRow.vue'
-import { state, refresh, loadState } from './composables/useSketchupBridge'
+import { state, refresh, loadState, setChannel } from './composables/useSketchupBridge'
 import { useTheme } from './composables/useTheme'
 
 useTheme()

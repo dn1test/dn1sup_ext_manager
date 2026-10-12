@@ -21,7 +21,7 @@ module Dn1sup
 
   module ExtManager
     ID      = 'dn1sup_ext_manager'
-    VERSION = '0.11.2'
+    VERSION = '0.12.0'
     REPO    = 'dn1test/dn1sup_ext_manager'
     ASSET   = "#{ID}.rbz"
     PAGE_URL     = "https://github.com/#{REPO}/releases"
@@ -41,6 +41,21 @@ module Dn1sup
     CMD_TOOLTIP  = 'DN1Sup Extension Store — каталог, установка и обновление расширений'
     # Актуальная версия формата снапшота релизов (см. save/load_release_snapshot).
     SNAPSHOT_VERSION = 4
+
+    # Ruby-неймспейсы расширений DN1Sup для переключения каналов dev/prod
+    # (namespace_for). Имена исторически неоднородные, поэтому явная карта;
+    # для остальных — поле namespace из .sketchup_dev.json dev-копии, затем
+    # camelcase от id.
+    NAMESPACE_MAP = {
+      'dn1sup_ext_manager'    => 'Dn1sup::ExtManager',
+      'dn1sup_time_project'   => 'Dn1supTimeProject',
+      'dn1sup_save_settings'  => 'Dn1supSaveSettings',
+      'dn1sup_autoselect_tag' => 'Dn1sup::AutoSelectTag',
+      'dn1sup_create_project' => 'Dn1supCreateProject',
+      'dn1sup_comp_add_view'  => 'CustomTools::ComponentAddViews',
+      'dn1sup_export_3d'      => 'Dn1supExport3d',
+      'dn1sup_export_pdf2'    => 'DN1Code::ExportPdf2'
+    }.freeze
 
     @dialog = nil
     @release_cache = {}   # repo => предлагаемый (новейший стабильный) релиз
@@ -634,6 +649,10 @@ module Dn1sup
           commits = cached['messages']
         end
 
+        # Каналы: что установлено в Plugins и какой канал активен в сессии
+        # (для переключателя dev/prod).
+        chans = installed_channels(id)
+
         {
           'id'                => id,
           'name'              => name,
@@ -651,7 +670,9 @@ module Dn1sup
           'changelog'         => changelog,
           'commits'           => commits,
           'release_url'       => release_url,
-          'published_at'      => published_at
+          'published_at'      => published_at,
+          'channels'          => { 'prod' => chans['prod'], 'dev' => chans['dev'] },
+          'active_channel'    => active_channel(id).to_s
         }
       end.compact
     rescue StandardError => e
@@ -752,10 +773,15 @@ module Dn1sup
 
       # 1. Отключаем расширение в текущей сессии SketchUp
       if Sketchup.respond_to?(:extensions) && Sketchup.extensions
-        ext = Sketchup.extensions.find do |candidate|
+        # ExtensionManager не включает Enumerable — только each/[]/size.
+        ext = nil
+        Sketchup.extensions.each do |candidate|
           c_name = candidate.respond_to?(:name) ? candidate.name.to_s : ''
           c_id   = candidate.respond_to?(:id) ? candidate.id.to_s : ''
-          c_name.casecmp?(id.to_s) || c_id.casecmp?(id.to_s)
+          if c_name.casecmp?(id.to_s) || c_id.casecmp?(id.to_s)
+            ext = candidate
+            break
+          end
         end
         ext.uncheck if ext && ext.respond_to?(:uncheck)
       end
@@ -775,6 +801,442 @@ module Dn1sup
     rescue StandardError => e
       Dn1sup::Updater.log_error(e)
       { 'ok' => false, 'error' => "Ошибка при удалении: #{e.message}" }
+    end
+
+    # ---- Каналы dev / prod -------------------------------------------------
+    #
+    # Dev-вариант (<id>_dev.rb + <id>_dev/) ставится только sketchup-dev-mcp;
+    # файлы каналов не пересекаются, а Ruby-неймспейс общий, поэтому в сессии
+    # активен строго один канал. Переключение без перезапуска: unload! неймспейса
+    # → чистка $LOADED_FEATURES → remove_const → load регистратора другого
+    # канала (тот же механизм, что ext_reload в sketchup-dev-mcp).
+    # Файлы каналов Store не ставит и не удаляет — только переключает активный.
+
+    # Выгрузка собственного неймспейса: остановка фоновых процессов и UI.
+    # Меню и тулбар через API не удаляются — пункты остаются до перезапуска
+    # (тулбар скрываем). Вызывается движком каналов перед remove_const.
+    def unload!
+      UI.stop_timer(@selfcheck_timer_id) if @selfcheck_timer_id
+      @selfcheck_timer_id = nil
+      UI.stop_timer(@selfheal_timer_id) if @selfheal_timer_id
+      @selfheal_timer_id = nil
+      if @dialog
+        begin
+          @dialog.close if @dialog.visible?
+        rescue StandardError
+          nil
+        end
+        @dialog = nil
+      end
+      toolbar = UI::Toolbar.new(TOOLBAR_NAME)
+      toolbar.hide if toolbar.respond_to?(:visible?) && toolbar.visible?
+      true
+    rescue StandardError => e
+      Dn1sup::Updater.log_error(e)
+      false
+    end
+
+    # Папка Plugins (nil вне SketchUp).
+    def plugins_dir
+      return nil unless defined?(Sketchup) && Sketchup.respond_to?(:find_support_file)
+
+      dir = Sketchup.find_support_file('Plugins')
+      dir && File.directory?(dir) ? dir : nil
+    rescue StandardError
+      nil
+    end
+
+    # Установленные каналы расширения (наличие файлов в Plugins):
+    # { 'prod' => bool, 'dev' => bool }.
+    def installed_channels(id)
+      dir = plugins_dir
+      { 'prod' => !!(dir && File.file?(File.join(dir, "#{id}.rb"))),
+        'dev' => !!(dir && File.file?(File.join(dir, "#{id}_dev.rb"))) }
+    rescue StandardError
+      { 'prod' => false, 'dev' => false }
+    end
+
+    # Ruby-неймспейс расширения: карта → манифест dev-копии → camelcase от id.
+    def namespace_for(id)
+      id = id.to_s
+      return NAMESPACE_MAP[id] if NAMESPACE_MAP.key?(id)
+
+      dir = plugins_dir
+      if dir
+        manifest = File.join(dir, "#{id}_dev", '.sketchup_dev.json')
+        ns = JSON.parse(File.read(manifest))['namespace'].to_s if File.file?(manifest)
+        return ns unless ns.to_s.empty?
+      end
+      id.split('_').map { |part| part.capitalize }.join
+    rescue StandardError
+      id.split('_').map { |part| part.capitalize }.join
+    end
+
+    # Все записи Extension Manager для канала расширения: по id (<id> / <id>_dev)
+    # и по отображаемому имени (… / … [DEV]) — старые установки могли быть
+    # без ext.id. Повторные регистрации могут оставлять несколько записей.
+    def each_channel_record(id, channel)
+      return unless defined?(Sketchup) && Sketchup.respond_to?(:extensions) && Sketchup.extensions
+
+      id_key   = channel == 'dev' ? "#{id}_dev" : id.to_s
+      name_key = product_name(id)
+      name_key = "#{name_key} [DEV]" if channel == 'dev'
+      Sketchup.extensions.each do |candidate|
+        c_id   = candidate.respond_to?(:id) ? candidate.id.to_s : ''
+        c_name = candidate.respond_to?(:name) ? candidate.name.to_s : ''
+        next unless (!id_key.empty? && (c_id.casecmp?(id_key) || c_name.casecmp?(id_key))) ||
+                    (!name_key.empty? && (c_id.casecmp?(name_key) || c_name.casecmp?(name_key)))
+
+        yield candidate
+      end
+    end
+
+    # Файлы канала в $LOADED_FEATURES (запасной признак: SketchUp требует
+    # часть файлов расширений через require-семантику).
+    def channel_files_loaded?(id, channel)
+      dir = plugins_dir
+      return false unless dir
+
+      base = File.join(dir, channel == 'dev' ? "#{id}_dev" : id.to_s).to_s.tr('\\', '/')
+      folder = "#{base}/"
+      registrar = "#{base}.rb"
+      $LOADED_FEATURES.any? do |path|
+        p = path.to_s.tr('\\', '/')
+        p.start_with?(folder) || p == registrar
+      end
+    rescue StandardError
+      false
+    end
+
+    # Активный канал расширения в сессии: 'prod' / 'dev' / nil (не загружен).
+    # Источники по надёжности: source_location метода неймспейса — файл какого
+    # канала определил текущий код; сессиный журнал переключений (глобал —
+    # переживает remove_const неймспейса); пути канала в $LOADED_FEATURES.
+    # Записи Extension Manager непригодны: uncheck не сбрасывает loaded?,
+    # а enabled? в реальном API нет.
+    def active_channel(id)
+      id = id.to_s
+      ns_name = namespace_for(id)
+      if Object.const_defined?(ns_name)
+        ns = Object.const_get(ns_name)
+        (ns.methods - Object.methods).each do |m|
+          loc = (ns.method(m).source_location rescue nil)
+          next unless loc
+
+          src = loc.to_s.tr('\\', '/')
+          return 'dev' if src.include?("/#{id}_dev/")
+          return 'prod' if src.include?("/#{id}/")
+
+          break
+        end
+      end
+      state = ($dn1sup_active_channels ||= {})
+      logged = state[id].to_s
+      return logged if %w[prod dev].include?(logged)
+
+      return 'dev' if channel_files_loaded?(id, 'dev')
+      return 'prod' if channel_files_loaded?(id, 'prod')
+
+      nil
+    rescue StandardError
+      nil
+    end
+
+    # Канал для UI: сохранённый выбор пользователя (pref — намерение, оно
+    # может расходиться с каналом самого Store, например пока его
+    # самопереключение отложено). Без pref — фактический канал Store.
+    def current_channel
+      return 'prod' unless defined?(Sketchup)
+
+      saved = Sketchup.read_default('DN1Sup ExtManager', 'channel', 'prod').to_s
+      return saved if %w[prod dev].include?(saved)
+
+      active_channel(ID) || 'prod'
+    rescue StandardError
+      'prod'
+    end
+
+    # Переключение одного расширения на канал ('prod'/'dev'). Возвращает отчёт:
+    # ok, from, namespace, unload/unload_error/unload_note, purged,
+    # removed_const, main_loaded_via, error.
+    def switch_extension(id, target)
+      id = id.to_s
+      target = target.to_s
+      report = { 'id' => id, 'target' => target, 'ok' => false }
+      return report.merge('error' => "Неизвестный канал: #{target.inspect}.") unless %w[prod dev].include?(target)
+      return report.merge('error' => 'SketchUp недоступен.') unless defined?(Sketchup)
+
+      ns_name = namespace_for(id)
+      report['namespace'] = ns_name
+      report['from'] = active_channel(id)
+
+      # 1. Записи Extension Manager обоих каналов отключаем: галочка остаётся
+      #    только у целевого канала (после его регистрации ниже).
+      %w[prod dev].each do |ch|
+        each_channel_record(id, ch) do |rec|
+          next unless rec.respond_to?(:uncheck)
+
+          begin
+            rec.uncheck
+          rescue StandardError
+            nil
+          end
+        end
+      end
+
+      # 2. Выгрузка неймспейса: unload! → чистка $LOADED_FEATURES → remove_const.
+      if Object.const_defined?(ns_name)
+        ns = Object.const_get(ns_name)
+        if ns.respond_to?(:unload!)
+          begin
+            ns.unload!
+            report['unload'] = true
+          rescue StandardError => e
+            report['unload_error'] = "#{e.class}: #{e.message}"
+          end
+        else
+          report['unload'] = false
+          report['unload_note'] = 'нет unload! — пункты меню и таймеры старого канала могли остаться'
+        end
+      end
+      purged = []
+      [id, "#{id}_dev"].each do |part|
+        pattern = %r{[/\\]#{Regexp.escape(part)}([/\\]|\.rb$|\.rbe$|\.rbs$)}
+        $LOADED_FEATURES.grep(pattern).each do |path|
+          $LOADED_FEATURES.delete(path)
+          purged << path
+        end
+      end
+      report['purged'] = purged.size
+      if Object.const_defined?(ns_name)
+        # remove_const принимает только простое имя: квалифицированный путь
+        # (например Dn1sup::ExtManager) даёт NameError — спускаемся по секциям
+        # и удаляем последнюю у родителя.
+        parts = ns_name.split('::')
+        parent = parts[0..-2].inject(Object) { |mod, nm| mod.const_get(nm) }
+        parent.send(:remove_const, parts.last)
+        report['removed_const'] = true
+      end
+
+      # 3. Загрузка целевого канала: регистратор, при необходимости main.rb
+      #    явно (регистратор требует main при регистрации, но после
+      #    remove_const полагаться только на него нельзя).
+      dir = plugins_dir
+      return report.merge('error' => 'Папка Plugins не найдена.') unless dir
+
+      registrar = File.join(dir, target == 'dev' ? "#{id}_dev.rb" : "#{id}.rb")
+      unless File.file?(registrar)
+        return report.merge('error' => "Файлы канала #{target.upcase} не установлены (нет #{File.basename(registrar)}).")
+      end
+
+      load registrar
+      if Object.const_defined?(ns_name)
+        report['main_loaded_via'] = 'registrar'
+      else
+        main = File.join(dir, target == 'dev' ? "#{id}_dev" : id, 'main.rb')
+        return report.merge('error' => "не найден #{main}") unless File.file?(main)
+
+        load main
+        report['main_loaded_via'] = 'explicit'
+      end
+      # check целевой записи: повторная регистрация не восстанавливает флаг
+      # «load on start» — без check после перезапуска канал сам не загрузится.
+      # Для уже загруженного кода безопасен: инициализация под file_loaded?.
+      each_channel_record(id, target) do |rec|
+        next unless rec.respond_to?(:check)
+
+        begin
+          rec.check
+        rescue StandardError
+          nil
+        end
+      end
+      report['ok'] = Object.const_defined?(ns_name)
+      report['error'] = 'неймспейс не определился после загрузки' unless report['ok']
+      ($dn1sup_active_channels ||= {})[id] = target if report['ok']
+      report
+    rescue StandardError, ScriptError => e
+      Dn1sup::Updater.log_error(e)
+      report.merge('error' => "#{e.class}: #{e.message}")
+    end
+
+    # Самопереключение Store: константы собственного неймспейса нельзя снимать
+    # из метода, который в нём исполняется, — фактическое переключение
+    # откладывается таймером. Блок таймера самодостаточен: только локальные
+    # переменные и модули верхнего уровня (Object/Sketchup/UI/File) — после
+    # remove_const константы Dn1sup::ExtManager из блока недоступны.
+    def schedule_self_switch(target)
+      target = target.to_s
+      dir = plugins_dir.to_s
+      registrar = File.join(dir, target == 'dev' ? "#{ID}_dev.rb" : "#{ID}.rb")
+      main = File.join(dir, target == 'dev' ? "#{ID}_dev" : ID, 'main.rb')
+
+      # Окно каталога принадлежит выгружаемому неймспейсу — закрываем сразу.
+      if @dialog
+        begin
+          @dialog.close if @dialog.visible?
+        rescue StandardError
+          nil
+        end
+        @dialog = nil
+      end
+      store_log("запланировано самопереключение Store на #{target.upcase}")
+
+      UI.start_timer(0.3, false) do
+        begin
+          [['dn1sup_ext_manager', 'DN1Sup Extension Store'],
+           ['dn1sup_ext_manager_dev', 'DN1Sup Extension Store [DEV]']].each do |key, display|
+            Sketchup.extensions.each do |c|
+              c_id   = c.respond_to?(:id) ? c.id.to_s : ''
+              c_name = c.respond_to?(:name) ? c.name.to_s : ''
+              next unless c_id.casecmp?(key) || c_name.casecmp?(display)
+
+              begin
+                c.uncheck if c.respond_to?(:uncheck)
+              rescue StandardError
+                nil
+              end
+            end
+          end
+          if Object.const_defined?('Dn1sup::ExtManager')
+            ns = Object.const_get('Dn1sup::ExtManager')
+            begin
+              ns.unload! if ns.respond_to?(:unload!)
+            rescue StandardError
+              nil
+            end
+            $LOADED_FEATURES.reject! { |p| p =~ %r{[/\\]dn1sup_ext_manager([/\\]|\.rb$|\.rbe$)} }
+            Dn1sup.send(:remove_const, :ExtManager)
+          end
+          load registrar if File.file?(registrar)
+          unless Object.const_defined?('Dn1sup::ExtManager')
+            load main if File.file?(main)
+          end
+          if Object.const_defined?('Dn1sup::ExtManager')
+            ($dn1sup_active_channels ||= {})['dn1sup_ext_manager'] = target
+            # check целевой записи: см. комментарий в switch_extension
+            target_id = target == 'dev' ? 'dn1sup_ext_manager_dev' : 'dn1sup_ext_manager'
+            Sketchup.extensions.each do |c|
+              c_id = c.respond_to?(:id) ? c.id.to_s : ''
+              next unless c_id.casecmp?(target_id)
+              begin
+                c.check if c.respond_to?(:check)
+              rescue StandardError
+                nil
+              end
+            end
+            begin
+              note = UI::Notification.new(
+                nil, 'DN1Sup Extension Store',
+                "переключён на канал #{target.upcase} — код перезагружен без перезапуска"
+              )
+              note.show
+            rescue StandardError
+              puts "DN1Sup Extension Store: переключён на канал #{target.upcase}"
+            end
+            # Каталог открывается уже в новом канале: код неймспейса свежий,
+            # метод open_store нового экземпляра создаёт свой @dialog.
+            begin
+              Dn1sup::ExtManager.open_store
+            rescue StandardError => e
+              puts "DN1Sup Extension Store: каталог не переоткрылся: #{e.class}: #{e.message}"
+            end
+          else
+            puts "DN1Sup Extension Store: не удалось загрузить канал #{target.upcase} (#{registrar})"
+          end
+        rescue StandardError, ScriptError => e
+          puts "DN1Sup Extension Store: ошибка переключения канала: #{e.class}: #{e.message}"
+        end
+      end
+    end
+
+    # Переключение канала для всех расширений каталога, у которых установлен
+    # целевой. Расширения без файлов целевого канала пропускаются (попадают
+    # в skipped), сам Store переключается последним и с отложкой.
+    def perform_switch_channel(target)
+      target = target.to_s
+      return { 'ok' => false, 'error' => "Неизвестный канал: #{target.inspect}." } unless %w[prod dev].include?(target)
+      return { 'ok' => false, 'error' => 'SketchUp недоступен.' } unless defined?(Sketchup)
+
+      switched = []
+      skipped  = []
+      errors   = []
+      notes    = []
+
+      merged_entries.each do |entry|
+        id = entry['id'].to_s
+        next if id.empty?
+
+        channels = installed_channels(id)
+        unless channels[target]
+          # Не установлен ни один канал — расширение просто не установлено,
+          # в отчёт по переключению его не включаем.
+          skipped << "#{id} (нет файлов канала #{target.upcase})" if channels.values.any?
+          next
+        end
+        next if active_channel(id) == target
+
+        if id == ID
+          schedule_self_switch(target)
+          switched << id
+          notes << 'окно Store закроется и откроется уже в новом канале' if @dialog
+          next
+        end
+
+        rep = switch_extension(id, target)
+        if rep['ok']
+          switched << id
+          notes << "#{id}: #{rep['unload_note']}" if rep['unload_note']
+          errors << "#{id} (выгрузка): #{rep['unload_error']}" if rep['unload_error']
+        else
+          errors << "#{id}: #{rep['error']}"
+        end
+      end
+
+      Sketchup.write_default('DN1Sup ExtManager', 'channel', target)
+      store_log(switched.empty? ? "канал #{target.upcase} уже активен" :
+                "переключение на #{target.upcase}: #{switched.join(', ')}")
+
+      message =
+        if switched.empty?
+          "Канал #{target.upcase} уже активен."
+        else
+          "Переключено на #{target.upcase}: #{switched.join(', ')}."
+        end
+      message += " Пропущены: #{skipped.join('; ')}." unless skipped.empty?
+      message += " #{notes.join(' ')}" unless notes.empty?
+
+      {
+        'ok' => errors.empty?,
+        'channel' => target,
+        'switched' => switched,
+        'skipped' => skipped,
+        'errors' => errors,
+        'notes' => notes,
+        'error' => errors.join(' '),
+        'message' => message
+      }
+    rescue StandardError => e
+      Dn1sup::Updater.log_error(e)
+      { 'ok' => false, 'error' => "Ошибка переключения канала: #{e.message}" }
+    end
+
+    # Доведение фактического канала до сохранённого при старте. Применяется
+    # только к dev: галочки Extension Manager при старте восстанавливают
+    # прод (dev-регистратор не регистрируется при занятом неймспейсе), и без
+    # этого выбранный dev-канал терялся бы после каждого перезапуска.
+    def apply_saved_channel
+      return unless defined?(Sketchup)
+
+      saved = Sketchup.read_default('DN1Sup ExtManager', 'channel', 'prod').to_s
+      return unless saved == 'dev'
+      return if active_channel(ID) == 'dev'
+
+      store_log('применяется сохранённый канал DEV')
+      perform_switch_channel('dev')
+    rescue StandardError => e
+      Dn1sup::Updater.log_error(e)
+      nil
     end
 
     # ---- UI & HtmlDialog --------------------------------------------------
@@ -987,6 +1449,7 @@ module Dn1sup
 
       payload = {
         'version'  => VERSION,
+        'channel'  => current_channel,
         'products' => products.is_a?(Array) ? products : []
       }
       dlg.execute_script("window.pushState(#{JSON.generate(payload)});")
@@ -1102,6 +1565,15 @@ module Dn1sup
         repo = parse_json(param)['repo']
         hide_repo(repo)
         store_log("скрыт найденный репозиторий #{repo}")
+        send_products_to_dialog(force: false)
+      when 'set_channel'
+        # Переключение канала dev/prod: выгрузка чужого канала, загрузка
+        # своего, без перезапуска SketchUp. Сам Store переключается с отложкой
+        # (окно закрывается, канал меняется таймером) — тогда @dialog станет
+        # nil и перерисовка ниже не выполняется.
+        target = parse_json(param)['channel'].to_s
+        res = perform_switch_channel(target)
+        notify_action_result(target, 'set_channel', res)
         send_products_to_dialog(force: false)
       when 'log_js_error'
         log_js_error(param)
@@ -1295,11 +1767,25 @@ module Dn1sup
       setup_toolbar
 
       # Фоновая проверка обновлений менеджера при запуске (сеть в потоке,
-      # результат — ненавязчивое уведомление, без модальных диалогов)
-      timer_id = nil
-      timer_id = UI.start_timer(20, false) do
-        UI.stop_timer(timer_id) if timer_id
+      # результат — ненавязчивое уведомление, без модальных диалогов).
+      # id таймера хранится в ivar: unload! останавливает его при
+      # переключении канала, иначе таймер переживёт remove_const неймспейса.
+      @selfcheck_timer_id = UI.start_timer(20, false) do
+        @selfcheck_timer_id = nil
         Dn1sup::Updater.check!({ id: ID, repo: REPO, version: VERSION, asset: ASSET, async: true })
+      end
+
+      # Автоприменение сохранённого dev-канала: галочки Extension Manager при
+      # старте восстанавливают прод (dev-регистратор не регистрируется при
+      # занятом неймспейсе), и выбранный dev-канал терялся бы после
+      # перезапуска. Через полминуты, когда SketchUp догрузится, доводим
+      # фактическое состояние до сохранённого выбора.
+      saved_channel = Sketchup.read_default('DN1Sup ExtManager', 'channel', 'prod').to_s
+      if saved_channel == 'dev'
+        @selfheal_timer_id = UI.start_timer(30, false) do
+          @selfheal_timer_id = nil
+          Dn1sup::ExtManager.apply_saved_channel
+        end
       end
 
       file_loaded(__FILE__)

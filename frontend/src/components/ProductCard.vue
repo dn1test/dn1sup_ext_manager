@@ -16,6 +16,14 @@
           <span class="text-sm font-semibold leading-tight">{{ p.name }}</span>
           <span class="es-id-badge">{{ p.id }}</span>
           <span
+            v-if="p.active_channel === 'dev'"
+            class="inline-flex items-center gap-1 px-1.5 py-px rounded-full text-[11px] font-medium whitespace-nowrap
+                   bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300"
+            title="Расширение работает из dev-канала (рабочая копия sketchup-dev-mcp), а не из релиза"
+          >
+            DEV
+          </span>
+          <span
             v-if="p.discovered"
             class="inline-flex items-center gap-1 px-1.5 py-px rounded-full text-[11px] font-medium whitespace-nowrap
                    bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300"

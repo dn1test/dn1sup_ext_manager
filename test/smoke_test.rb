@@ -566,6 +566,223 @@ ensure
   Dn1sup::ExtManager.instance_variable_set(:@commits_cache, {})
 end
 
+# 13d. Каналы dev/prod: namespace_for, installed_channels, active_channel,
+# switch_extension (реальная загрузка/выгрузка фейкового расширения),
+# perform_switch_channel (switched/skipped/pref) и протокол dispatch set_channel.
+require 'fileutils'
+$ext_records = []
+Sketchup.define_singleton_method(:extensions) { $ext_records }
+Sketchup.define_singleton_method(:register_extension) do |ext, load_on_start = false|
+  $ext_records << ext if load_on_start
+  true
+end
+
+# Стаб SketchupExtension (топ-уровневый, как в реальном SketchUp) — нужен
+# регистраторам фейковых расширений, которые switch_extension грузит через load.
+class SketchupExtension
+  attr_reader :name
+  attr_accessor :version, :description, :creator, :copyright
+
+  def initialize(name, path = nil)
+    @name = name
+    @path = path
+    @enabled = true
+  end
+
+  def id
+    @id.to_s
+  end
+
+  def id=(value)
+    @id = value.to_s
+  end
+
+  def enabled?
+    @enabled != false
+  end
+
+  def check
+    @enabled = true
+  end
+
+  def uncheck
+    @enabled = false
+  end
+end
+
+fake_plugins = Dir.mktmpdir('dn1sup_chan')
+begin
+  Sketchup.define_singleton_method(:find_support_file) { |name| name == 'Plugins' ? fake_plugins : nil }
+
+  # Регистрация с load_on_start=true требует main, как настоящий SketchUp
+  # (require — путь попадает в $LOADED_FEATURES, по нему детектируется канал)
+  Sketchup.define_singleton_method(:register_extension) do |ext, load_on_start = false|
+    $ext_records << ext if load_on_start
+    if load_on_start
+      path = ext.instance_variable_get(:@path).to_s
+      unless path.empty?
+        path += '.rb' unless File.extname(path) == '.rb'
+        require path
+      end
+    end
+    true
+  end
+
+  # --- фейковое расширение с обоими каналами + prod-only сосед -------------
+  reg_prod = <<~RB
+    ext = SketchupExtension.new('DN1Sup Chan Test', File.join(File.dirname(__FILE__), 'dn1sup_chan_test', 'main'))
+    ext.id = 'dn1sup_chan_test'
+    Sketchup.register_extension(ext, true)
+  RB
+  main_ns = <<~RB
+    module Dn1supChanTest
+      CHANNEL = 'prod'
+
+      def self.unloaded?
+        @unloaded == true
+      end
+
+      def self.unload!
+        @unloaded = true
+      end
+    end
+  RB
+  reg_dev = <<~RB
+    ext = SketchupExtension.new('DN1Sup Chan Test [DEV]', File.join(File.dirname(__FILE__), 'dn1sup_chan_test_dev', 'main'))
+    ext.id = 'dn1sup_chan_test_dev'
+    Sketchup.register_extension(ext, true)
+  RB
+  main_ns_dev = main_ns.sub("CHANNEL = 'prod'", "CHANNEL = 'dev'")
+  reg_solo = <<~RB
+    ext = SketchupExtension.new('DN1Sup Chan Solo', File.join(File.dirname(__FILE__), 'dn1sup_chan_solo', 'main'))
+    ext.id = 'dn1sup_chan_solo'
+    Sketchup.register_extension(ext, true)
+  RB
+
+  File.write(File.join(fake_plugins, 'dn1sup_chan_test.rb'), reg_prod)
+  FileUtils.mkdir_p(File.join(fake_plugins, 'dn1sup_chan_test'))
+  File.write(File.join(fake_plugins, 'dn1sup_chan_test', 'main.rb'), main_ns)
+  File.write(File.join(fake_plugins, 'dn1sup_chan_test_dev.rb'), reg_dev)
+  FileUtils.mkdir_p(File.join(fake_plugins, 'dn1sup_chan_test_dev'))
+  File.write(File.join(fake_plugins, 'dn1sup_chan_test_dev', 'main.rb'), main_ns_dev)
+  File.write(File.join(fake_plugins, 'dn1sup_chan_solo.rb'), reg_solo)
+  FileUtils.mkdir_p(File.join(fake_plugins, 'dn1sup_chan_solo'))
+  File.write(File.join(fake_plugins, 'dn1sup_chan_solo', 'main.rb'), 'module Dn1supChanSolo
+end')
+  # Соседний плагин: реальный require — его константа и запись в
+  # $LOADED_FEATURES должны пережить все переключения
+  File.write(File.join(fake_plugins, 'other_chan_plugin.rb'), 'module OtherChanPlugin
+end')
+  require File.join(fake_plugins, 'other_chan_plugin.rb')
+
+  # Регистры активных расширений: prod загружен, solo — prod-only
+  prod_rec = SketchupExtension.new('DN1Sup Chan Test')
+  prod_rec.id = 'dn1sup_chan_test'
+  $ext_records << prod_rec
+  solo_rec = SketchupExtension.new('DN1Sup Chan Solo')
+  solo_rec.id = 'dn1sup_chan_solo'
+  $ext_records << solo_rec
+  # Имитируем загрузку prod при старте SketchUp: запись включена — main в памяти
+  require File.join(fake_plugins, 'dn1sup_chan_test', 'main.rb')
+  require File.join(fake_plugins, 'dn1sup_chan_solo', 'main.rb')
+
+  # --- namespace_for: карта, манифест dev-копии, camelize-фолбэк -----------
+  assert 'namespace_for: из карты', Dn1sup::ExtManager.namespace_for('dn1sup_ext_manager') == 'Dn1sup::ExtManager'
+  assert 'namespace_for: из карты с чужим префиксом',
+         Dn1sup::ExtManager.namespace_for('dn1sup_comp_add_view') == 'CustomTools::ComponentAddViews'
+  FileUtils.mkdir_p(File.join(fake_plugins, 'dn1sup_ns_manifest_dev'))
+  File.write(File.join(fake_plugins, 'dn1sup_ns_manifest_dev', '.sketchup_dev.json'),
+             JSON.generate('namespace' => 'Dn1sup::NsManifest'))
+  assert 'namespace_for: манифест dev-копии',
+         Dn1sup::ExtManager.namespace_for('dn1sup_ns_manifest') == 'Dn1sup::NsManifest'
+  assert 'namespace_for: camelize-фолбэк', Dn1sup::ExtManager.namespace_for('dn1sup_chan_test') == 'Dn1supChanTest'
+
+  # --- installed_channels ---------------------------------------------------
+  chans = Dn1sup::ExtManager.installed_channels('dn1sup_chan_test')
+  assert 'installed_channels: оба канала', chans == { 'prod' => true, 'dev' => true }, chans.inspect
+  assert 'installed_channels: только prod',
+         Dn1sup::ExtManager.installed_channels('dn1sup_chan_solo') == { 'prod' => true, 'dev' => false }
+  assert 'installed_channels: не установлено',
+         Dn1sup::ExtManager.installed_channels('dn1sup_nowhere') == { 'prod' => false, 'dev' => false }
+
+  # --- active_channel -------------------------------------------------------
+  assert 'active_channel: prod активен', Dn1sup::ExtManager.active_channel('dn1sup_chan_test') == 'prod'
+  assert 'active_channel: solo prod', Dn1sup::ExtManager.active_channel('dn1sup_chan_solo') == 'prod'
+  assert 'active_channel: не загружено — nil', Dn1sup::ExtManager.active_channel('dn1sup_nowhere').nil?
+
+  # --- switch_extension: prod -> dev с реальной загрузкой -------------------
+  old_ns = Object.const_get('Dn1supChanTest')
+  rep = Dn1sup::ExtManager.switch_extension('dn1sup_chan_test', 'dev')
+  assert 'switch_extension: ok', rep['ok'] == true, rep.inspect
+  assert 'switch_extension: from prod', rep['from'] == 'prod'
+  assert 'switch_extension: unload! вызван', old_ns.unloaded? == true
+  assert 'switch_extension: константа заменена', !Object.const_get('Dn1supChanTest').equal?(old_ns)
+  assert 'switch_extension: загружен DEV', Object.const_get('Dn1supChanTest')::CHANNEL == 'dev'
+  assert 'switch_extension: prod-запись отключена', prod_rec.enabled? == false
+  assert 'active_channel после переключения: dev', Dn1sup::ExtManager.active_channel('dn1sup_chan_test') == 'dev'
+
+  # --- switch_extension: обратно dev -> prod --------------------------------
+  dev_ns = Object.const_get('Dn1supChanTest')
+  rep = Dn1sup::ExtManager.switch_extension('dn1sup_chan_test', 'prod')
+  assert 'switch_extension обратно: ok', rep['ok'] == true, rep.inspect
+  assert 'switch_extension обратно: unload! dev вызван', dev_ns.unloaded? == true
+  assert 'switch_extension обратно: загружен PROD', Object.const_get('Dn1supChanTest')::CHANNEL == 'prod'
+  assert 'switch_extension обратно: константа заменена', !Object.const_get('Dn1supChanTest').equal?(dev_ns)
+
+  # Инвариант: соседний плагин не вычищен из $LOADED_FEATURES и из констант
+  assert 'переключение не трогает соседний плагин',
+         Object.const_defined?('OtherChanPlugin') &&
+         $LOADED_FEATURES.any? { |p| p.to_s.end_with?('other_chan_plugin.rb') }
+
+  # --- perform_switch_channel: switched / skipped / pref --------------------
+  Dn1sup::ExtManager.instance_variable_set(:@discovered_entries, [
+    { 'id' => 'dn1sup_chan_test', 'name' => 'DN1Sup Chan Test', 'repo' => 'dn1test/dn1sup_chan_test', 'discovered' => true },
+    { 'id' => 'dn1sup_chan_solo', 'name' => 'DN1Sup Chan Solo', 'repo' => 'dn1test/dn1sup_chan_solo', 'discovered' => true }
+  ])
+  res = Dn1sup::ExtManager.perform_switch_channel('dev')
+  assert 'perform_switch_channel: ok', res['ok'] == true, res.inspect
+  assert 'perform_switch_channel: переключён chan_test', res['switched'] == ['dn1sup_chan_test'], res['switched'].inspect
+  assert 'perform_switch_channel: solo в skipped', res['skipped'].any? { |s| s.start_with?('dn1sup_chan_solo') }, res['skipped'].inspect
+  assert 'perform_switch_channel: pref записан', Sketchup.read_default('DN1Sup ExtManager', 'channel') == 'dev'
+  assert 'perform_switch_channel: факт — DEV', Object.const_get('Dn1supChanTest')::CHANNEL == 'dev'
+  assert 'current_channel: активный канал', Dn1sup::ExtManager.current_channel == 'dev'
+
+  # Повторное переключение на тот же канал — без действий
+  res2 = Dn1sup::ExtManager.perform_switch_channel('dev')
+  assert 'perform_switch_channel: повтор — пусто', res2['switched'].empty? && res2['ok'] == true, res2.inspect
+  assert 'perform_switch_channel: повтор — сообщение «уже активен»', res2['message'].include?('уже активен'), res2['message']
+
+  res3 = Dn1sup::ExtManager.perform_switch_channel('prod')
+  assert 'perform_switch_channel: возврат на PROD', res3['ok'] == true &&
+         Object.const_get('Dn1supChanTest')::CHANNEL == 'prod', res3.inspect
+  assert 'apply_saved_channel: pref prod — ничего не делает', Dn1sup::ExtManager.apply_saved_channel.nil?
+
+  # --- dispatch set_channel: протокол pushResult + pushState ----------------
+  chan_dlg = FakeStoreDialog.new
+  Dn1sup::ExtManager.instance_variable_set(:@dialog, chan_dlg)
+  chan_dlg.scripts.clear
+  Dn1sup::ExtManager.dispatch(chan_dlg, 'set_channel', JSON.generate('channel' => 'dev'))
+  chan_res = chan_dlg.scripts.grep(/window\.pushResult\(/).last
+  assert 'dispatch set_channel -> pushResult ok', !!chan_res && chan_res.include?('"set_channel"') && chan_res.include?('true'), chan_res.to_s[0, 200]
+  chan_state = chan_dlg.scripts.grep(/\Awindow\.pushState\(/).last
+  assert 'dispatch set_channel -> pushState с каналом', !!chan_state && chan_state.include?('"channel":"dev"'), chan_state.to_s[0, 160]
+  assert 'pushState карточек содержит channels', chan_state.to_s.include?('channels'), chan_state.to_s[0, 160]
+rescue StandardError => e
+  puts "EXCEPTION in 13d: #{e.class}: #{e.message}"
+  puts e.backtrace.first(5)
+  $failed += 1
+ensure
+  Sketchup.singleton_class.send(:remove_method, :find_support_file) rescue nil
+  Sketchup.singleton_class.send(:remove_method, :extensions) rescue nil
+  Sketchup.singleton_class.send(:remove_method, :register_extension) rescue nil
+  Sketchup.write_default('DN1Sup ExtManager', 'channel', nil)
+  Dn1sup::ExtManager.instance_variable_set(:@dialog, nil)
+  Dn1sup::ExtManager.instance_variable_set(:@discovered_entries, [])
+  $dn1sup_active_channels = nil
+  $ext_records.clear
+  FileUtils.remove_entry(fake_plugins) rescue nil
+end
+
 # 14. Уровни логирования: краткий прикладной лог + [DEBUG] только при флаге debug
 Dn1sup::Updater.log_info('smoke_test_probe_log_info')
 Dn1sup::Updater.log_error(RuntimeError.new('smoke_test_probe_log_error'))
