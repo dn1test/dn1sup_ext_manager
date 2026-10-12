@@ -21,7 +21,7 @@ module Dn1sup
 
   module ExtManager
     ID      = 'dn1sup_ext_manager'
-    VERSION = '0.12.0'
+    VERSION = '0.12.1'
     REPO    = 'dn1test/dn1sup_ext_manager'
     ASSET   = "#{ID}.rbz"
     PAGE_URL     = "https://github.com/#{REPO}/releases"
@@ -144,9 +144,30 @@ module Dn1sup
       Dn1sup::Updater.log_error(e)
     end
 
+    # Уникализация записей каталога по id и repo (первая копия выигрывает).
+    # Защита от накопившихся дублей в @discovered_entries (исторические
+    # снапшоты, повторные запуски автопоиска): карточки не должны плодиться.
+    def uniq_entries(entries)
+      seen = {}
+      entries.find_all do |e|
+        next false unless e.is_a?(Hash)
+
+        key = e['id'].to_s
+        repo = e['repo'].to_s
+        key = repo if key.empty?
+        next false if key.empty?
+        next false if seen[key] || (repo && seen[repo])
+
+        seen[key] = true
+        seen[repo] = true if repo
+        true
+      end
+    end
+
     # Полный список записей каталога: явный registry.json + найденные на
     # GitHub расширения, которых в реестре нет. Реестр первичен: найденное
-    # дополняет, но не заменяет. Скрытые репозитории отфильтровываются.
+    # дополняет, но не заменяет. Скрытые репозитории отфильтровываются,
+    # записи уникализируются (в т.ч. внутри самого списка найденного).
     def merged_entries
       entries = load_registry
       known = {}
@@ -157,8 +178,11 @@ module Dn1sup
       @discovered_entries.each do |e|
         next if known[e['repo'].to_s] || known[e['id'].to_s]
 
+        known[e['id'].to_s] = true
+        known[e['repo'].to_s] = true
         entries << e
       end
+      entries = uniq_entries(entries)
       hidden = hidden_repos
       hidden.empty? ? entries : entries.reject { |e| hidden.include?(e['repo'].to_s) }
     end
@@ -287,6 +311,9 @@ module Dn1sup
         }
         found << entry
       end
+      # Повторные репозитории (пагинация GitHub, гонки параллельных запросов)
+      # не проходят: одна запись на repo.
+      found = uniq_entries(found)
       store_debug("автопоиск: найдено #{found.size} новых репозиториев")
       found
     rescue StandardError => e
@@ -453,14 +480,15 @@ module Dn1sup
 
       if data['discovered'].is_a?(Array) && @discovered_entries.empty?
         # Самовосстановление: найденные записи мёртвых/перемещённых репозиториев
-        # (снапшот старой версии или внешний мусор) не resurrect-им.
+        # (снапшот старой версии или внешний мусор) не resurrect-им. Дубли
+        # (исторические снапшоты/повторные записи) схлопываем по repo/id.
         stale = data['stale'].is_a?(Hash) ? data['stale'] : {}
-        @discovered_entries = data['discovered'].find_all do |e|
+        @discovered_entries = uniq_entries(data['discovered'].find_all do |e|
           next false unless e.is_a?(Hash) && !e['id'].to_s.empty? && !e['repo'].to_s.empty?
 
           info = stale[e['repo'].to_s]
           !(info.is_a?(Hash) && %w[gone renamed].include?(info['status'].to_s))
-        end
+        end)
       end
       if data['commits'].is_a?(Hash) && @commits_cache.empty?
         @commits_cache = data['commits']
@@ -1343,7 +1371,20 @@ module Dn1sup
               known[e['id'].to_s] = true
               known[e['repo'].to_s] = true
             end
-            added = new_entries.reject { |e| known[e['id'].to_s] || known[e['repo'].to_s] }
+            # Дедупликация и внутри самой пачки (повторы автопоиска),
+            # и против уже известных записей.
+            added = []
+            new_entries.each do |e|
+              next unless e.is_a?(Hash)
+
+              id_key   = e['id'].to_s
+              repo_key = e['repo'].to_s
+              next if (known[id_key] || known[repo_key]) || added.any? { |a| a['id'].to_s == id_key || a['repo'].to_s == repo_key }
+
+              known[id_key] = true
+              known[repo_key] = true
+              added << e
+            end
             @discovered_entries.concat(added) unless added.empty?
             mark_discovered
             store_debug("автопоиск: новых расширений #{added.size}") unless added.empty?

@@ -364,6 +364,14 @@ begin
   merged = Dn1sup::ExtManager.merged_entries
   assert 'merged_entries: реестр + найденное', merged.any? { |e| e['id'] == 'dn1sup_dummy_found' } && merged.any? { |e| e['id'] == 'dn1sup_ext_manager' }
   assert 'find_entry находит найденное расширение', Dn1sup::ExtManager.find_entry('dn1sup_dummy_found').is_a?(Hash)
+
+  # Дедупликация: повторные записи автопоиска (исторические снапшоты,
+  # повторные запуски) не плодят карточки — одна копия на id/repo
+  Dn1sup::ExtManager.instance_variable_set(:@discovered_entries, Array.new(5) { discovered_fixture[0].dup })
+  merged_dup = Dn1sup::ExtManager.merged_entries
+  assert 'merged_entries: дубли найденного схлопнуты', merged_dup.count { |e| e['id'] == 'dn1sup_dummy_found' } == 1
+  assert 'merged_entries: дубли не ломают реестр', merged_dup.count { |e| e['id'] == 'dn1sup_ext_manager' } == 1
+  Dn1sup::ExtManager.instance_variable_set(:@discovered_entries, discovered_fixture)
   assert 'product_name для найденного расширения', Dn1sup::ExtManager.product_name('dn1sup_dummy_found') == 'DN1Sup Dummy Found'
 
   # Найденное без известных релизов в каталог не попадает
@@ -545,6 +553,24 @@ begin
   Dn1sup::ExtManager.load_release_snapshot
   assert 'снапшот: discovered мёртвого репо не восстановлен',
          Dn1sup::ExtManager.merged_entries.none? { |e| e['id'] == 'dn1sup_dummy_found' }
+  data['discovered'] = []
+
+  # Дедупликация discovered при загрузке снапшота: испорченные исторические
+  # снапшоты (многократные копии одной записи) самолечатся
+  Dn1sup::ExtManager.instance_variable_set(:@discovered_entries, [])
+  Dn1sup::ExtManager.instance_variable_set(:@stale_repos, {})
+  Dn1sup::ExtManager.instance_variable_set(:@release_cache, {})
+  Dn1sup::ExtManager.instance_variable_set(:@releases_cache, {})
+  data['stale'] = {}
+  data['version'] = Dn1sup::ExtManager::SNAPSHOT_VERSION
+  data['discovered'] = Array.new(6) { discovered_fixture[0].dup }
+  File.write(Dn1sup::ExtManager.snapshot_path, JSON.generate(data))
+  Dn1sup::ExtManager.load_release_snapshot
+  loaded_disc = Dn1sup::ExtManager.instance_variable_get(:@discovered_entries)
+  assert 'снапшот: дубли discovered схлопнуты при загрузке', loaded_disc.size == 1
+  Dn1sup::ExtManager.save_release_snapshot
+  clean = JSON.parse(File.read(Dn1sup::ExtManager.snapshot_path))
+  assert 'снапшот: перезаписывается чистыми данными', clean['discovered'].size == 1
   data['discovered'] = []
 
   # Старый формат v3 (без stale) читается, stale остаётся пустым
