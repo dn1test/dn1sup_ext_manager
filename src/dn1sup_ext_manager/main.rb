@@ -20,7 +20,7 @@ module Dn1sup
 
   module ExtManager
     ID      = 'dn1sup_ext_manager'
-    VERSION = '0.15.0'
+    VERSION = '0.15.1'
     REPO    = 'dn1test/dn1sup_ext_manager'
     ASSET   = "#{ID}.rbz"
     PAGE_URL     = "https://github.com/#{REPO}/releases"
@@ -32,6 +32,12 @@ module Dn1sup
     # репозитории и обновляется независимо.
     OWNER = 'dn1test'
     DISCOVERY_INTERVAL = 24 * 60 * 60
+    # Проверка существования репозитория (repo_meta) при принудительном
+    # обновлении — не чаще раза в 10 минут: экономит квоту GitHub API (60
+    # req/час без токена), иначе каждое нажатие «Обновить» съедало ~9 запросов
+    # только на meta и упиралось в 403.
+    REPO_CHECK_TTL = 10 * 60
+    CACHE_MUTEX = Mutex.new
 
     PLUGIN_DIR   = File.dirname(__FILE__).freeze
     HTML_PATH    = File.join(PLUGIN_DIR, 'html', 'index.html').freeze
@@ -54,6 +60,14 @@ module Dn1sup
     # gone/renamed — карточки убираются из установки/обновлений (установленные
     # остаются с пометкой), 'ok' — репозиторий жив (в т.ч. пересоздан).
     @stale_repos = {}
+    # Состояние фоновой проверки (для кнопки «Обновить»):
+    # повторные нажатия коалесцируются, а не плодят параллельные обходы.
+    @fetching = false
+    @pending_force = false
+    # Сводка последней проверки для UI: сколько репозиториев опрошено,
+    # какие не ответили (сеть/лимиты), когда проверено и дата снапшота.
+    @sync_status = { 'fetching' => false, 'fetched' => 0, 'total' => 0,
+                     'failed' => [], 'checked_at' => 0, 'snapshot_saved_at' => 0 }
 
     module_function
 
@@ -369,7 +383,9 @@ module Dn1sup
       repo_str = repo.to_s
       if force || !@release_cache.key?(repo_str)
         rel = Dn1sup::Updater.latest_release(repo_str)
-        @release_cache[repo_str] = rel if rel.is_a?(Hash) && rel.key?('tag_name')
+        if rel.is_a?(Hash) && rel.key?('tag_name')
+          CACHE_MUTEX.synchronize { @release_cache[repo_str] = rel }
+        end
       end
       @release_cache[repo_str] || {}
     rescue StandardError => e
@@ -385,15 +401,81 @@ module Dn1sup
       if force || !@releases_cache.key?(repo_str)
         list = Dn1sup::Updater.releases(repo_str)
         if list.is_a?(Array) && !list.empty?
-          @releases_cache[repo_str] = list
           offered = Dn1sup::Updater.choose_release(list)
-          @release_cache[repo_str] = offered if offered
+          CACHE_MUTEX.synchronize do
+            @releases_cache[repo_str] = list
+            @release_cache[repo_str] = offered if offered
+          end
         end
       end
       @releases_cache[repo_str] || []
     rescue StandardError => e
       Dn1sup::Updater.log_error(e)
       []
+    end
+
+    # Предлагаемый релиз для показа и установки — единый источник истины:
+    # новейший стабильный из списка; фолбэк — одиночный /releases/latest
+    # (когда список недоступен, а одиночный запрос прошёл). Раньше каталог
+    # показывал choose_release, а установка ставила /latest — при нестандартной
+    # публикации это были разные теги.
+    def offered_release(repo, force = false)
+      repo_str = repo.to_s
+      list = releases_list(repo_str, force)
+      offered = Dn1sup::Updater.choose_release(list)
+      return offered if offered
+
+      rel = latest_release(repo_str, force)
+      rel.is_a?(Hash) && rel.key?('tag_name') ? rel : nil
+    end
+
+    # Дата сохранения снапшота (unixtime) — для пометки «данные от …» в UI.
+    def snapshot_saved_at
+      path = snapshot_path
+      return @sync_status['snapshot_saved_at'].to_i if path.nil?
+
+      if File.file?(path)
+        begin
+          data = JSON.parse(File.read(path))
+          return data['saved_at'].to_i if data.is_a?(Hash) && data['saved_at'].to_i > 0
+        rescue StandardError
+          nil
+        end
+        begin
+          return File.mtime(path).to_i
+        rescue StandardError
+          0
+        end
+      end
+      @sync_status['snapshot_saved_at'].to_i
+    end
+
+    # Сводка синхронизации для push_state (UI показывает «проверено X/Y»).
+    def sync_payload
+      {
+        'fetching' => !!@fetching,
+        'fetched' => @sync_status['fetched'].to_i,
+        'total' => @sync_status['total'].to_i,
+        'failed' => Array(@sync_status['failed']),
+        'checked_at' => @sync_status['checked_at'].to_i,
+        'snapshot_saved_at' => snapshot_saved_at
+      }
+    end
+
+    # Базовая дата установки для расширений, поставленных вручную (installed_at
+    # неизвестна): фиксируем «сейчас», чтобы последующие переиздания без бампа
+    # версии распознавались как switch. Вызывается на главном потоке.
+    def seed_installed_at_baseline(products)
+      return unless defined?(Sketchup)
+
+      Array(products).each do |p|
+        next unless p.is_a?(Hash) && p['is_installed']
+        next unless Dn1sup::Updater.installed_at(p['id'].to_s).nil?
+
+        Dn1sup::Updater.mark_installed(p['id'].to_s)
+      end
+    rescue StandardError => e
+      Dn1sup::Updater.log_error(e)
     end
 
     # ---- Снапшот релизов (офлайн-фоллбэк для версий и changelog'ов) -------
@@ -443,6 +525,7 @@ module Dn1sup
         end
       end
       File.write(path, JSON.generate(data))
+      @sync_status['snapshot_saved_at'] = data['saved_at'].to_i
     rescue StandardError => e
       Dn1sup::Updater.log_error(e)
     end
@@ -629,6 +712,11 @@ module Dn1sup
         # Находим .rbz ассет в релизе конкретного репозитория
         rbz_asset  = find_rbz_asset(offered, entry['asset'])
         asset_name = rbz_asset ? rbz_asset['name'].to_s : (entry['asset'] || "#{id}.rbz").to_s
+        # Есть ли .rbz в предлагаемом релизе: тег подняли, а архив ещё не
+        # собран — обновление видно, но установка упадёт. Флаг нужен UI,
+        # чтобы честно показать «релиз без архива».
+        has_asset = !rbz_asset.nil?
+        has_asset = true if offered.nil?
 
         # Описание: из репозитория/релиза или из реестра
         desc = entry['description'].to_s
@@ -674,6 +762,7 @@ module Dn1sup
           'is_installed'      => is_installed,
           'latest_version'    => ext_target_ver.empty? ? '—' : ext_target_ver,
           'has_update'        => has_update,
+          'has_asset'         => has_asset,
           'status'            => status.to_s,
           'changelog'         => changelog,
           'commits'           => commits,
@@ -705,13 +794,14 @@ module Dn1sup
                  'error' => "#{name}: репозиторий #{repo} недоступен на GitHub (удалён или переименован)." }
       end
 
-      release = latest_release(repo, true)
+      release = offered_release(repo, true)
       unless release.is_a?(Hash) && release.key?('tag_name')
         store_log("установка '#{id}': релизы #{repo} недоступны")
         return { 'ok' => false, 'error' => "#{name}: не удалось получить список релизов с GitHub." }
       end
 
-      # Ищем .rbz ассет в релизе репозитория
+      # Ищем .rbz ассет в предлагаемом релизе (тот же релиз, что показывает
+      # каталог — см. offered_release)
       rbz_asset = find_rbz_asset(release, entry['asset'])
       url = rbz_asset ? rbz_asset['browser_download_url'] : Dn1sup::Updater.asset_url(release, entry['asset'].to_s)
       if url.to_s.empty?
@@ -827,6 +917,7 @@ module Dn1sup
       #    успешных релизов и найденных расширений, чтобы каталог был виден офлайн.
       load_release_snapshot if @release_cache.empty?
       local = collect_products_data(false, check_releases: false)
+      seed_installed_at_baseline(local)
       store_debug("отрисовка каталога: #{local.is_a?(Array) ? local.size : 0} продуктов" \
                   "#{force ? ', force-обновление' : ''}")
       push_state(dlg, local)
@@ -834,6 +925,18 @@ module Dn1sup
       # 2. Фоновое обновление версий через сеть (только сетевые запросы, без SketchUp API в потоке)
       repos = merged_entries.map { |e| e['repo'].to_s }.uniq.reject(&:empty?)
       return if repos.empty?
+
+      if @fetching
+        # Повторное нажатие «Обновить» во время обхода: второй параллельный
+        # обход не запускаем (гонка merge! + перезапись push_state), а
+        # запоминаем желание и доберём свежие данные по завершении текущего.
+        @pending_force = true if force
+        store_debug('обновление уже идёт — повторный запрос коалесцирован')
+        return
+      end
+      @sync_status['total'] = repos.size
+      @fetching = true
+      @sync_status['fetching'] = true
 
       fetch_and_render(dlg, repos, force, attempts_left: 1)
     rescue StandardError => e
@@ -848,17 +951,18 @@ module Dn1sup
       want_discovery = discovery_due?(force)
       Dn1sup::Updater.defer_async(
         lambda do
-          result = { 'releases' => {}, 'discovered' => nil, 'stale' => {}, 'changelogs' => {} }
+          result = { 'releases' => {}, 'discovered' => nil, 'stale' => {}, 'changelogs' => {}, 'failed' => [] }
           now = Time.now.to_i
           repos.each do |repo|
             repo_str = repo.to_s
             next if repo_str.empty?
 
-            # Существование репозитория проверяем не чаще раза в сутки
-            # (кнопка «Обновить» — force — проверяет всегда).
+            # Существование репозитория: раз в сутки, при force — не чаще раза
+            # в REPO_CHECK_TTL (экономия квоты GitHub API).
             info = @stale_repos[repo_str]
             meta = nil
-            if force || !info.is_a?(Hash) || (now - info['checked_at'].to_i) >= DISCOVERY_INTERVAL
+            meta_due = force ? (!info.is_a?(Hash) || (now - info['checked_at'].to_i) >= REPO_CHECK_TTL) : (!info.is_a?(Hash) || (now - info['checked_at'].to_i) >= DISCOVERY_INTERVAL)
+            if meta_due
               meta = Dn1sup::Updater.repo_meta(repo_str)
               result['stale'][repo_str] = meta
             end
@@ -869,7 +973,13 @@ module Dn1sup
             next if dead
 
             list = releases_list(repo_str, force)
-            result['releases'][repo_str] = list unless list.empty?
+            if list.empty?
+              # Пустой список — это неуспех (сеть/лимиты), а не «релизов нет»:
+              # фиксируем для сводки, успешный кэш при этом не затёрт.
+              result['failed'] << repo_str
+            else
+              result['releases'][repo_str] = list
+            end
 
             # Резерв «Что нового»: CHANGELOG.md из ветки main — раз за сессию
             # на репозиторий. Сеть — только в этом фоновом потоке. nil (таймаут,
@@ -888,12 +998,13 @@ module Dn1sup
           result
         end,
         lambda do |fetched_raw|
-          next unless @dialog
-
           fetched = fetched_raw.is_a?(Hash) ? fetched_raw : {}
           lists = fetched['releases'].is_a?(Hash) ? fetched['releases'] : {}
-          store_debug("релизы получены #{lists.size}/#{repos.size}" \
-                      "#{lists.size < repos.size && attempts_left == 0 ? ' (часть недоступна)' : ''}")
+          failed = fetched['failed'].is_a?(Array) ? fetched['failed'] : []
+          # Сводка видна и без debug-флага: иначе тихий 403 выглядел как
+          # «обновлений нет».
+          store_log("проверка обновлений: получено #{lists.size}/#{repos.size}" \
+                    "#{failed.any? ? " (недоступны: #{failed.join(', ')})" : ''}")
 
           # Пометки удалённых/переименованных применяем ДО слияния релизов и
           # найденного: они чистят кэши и @discovered_entries под эти репозитории.
@@ -928,28 +1039,48 @@ module Dn1sup
           end
 
           if lists.is_a?(Hash) && lists.any?
-            @releases_cache.merge!(lists)
+            CACHE_MUTEX.synchronize { @releases_cache.merge!(lists) }
           end
           changelogs = fetched['changelogs'].is_a?(Hash) ? fetched['changelogs'] : {}
-          @changelog_md_cache.merge!(changelogs) unless changelogs.empty?
+          CACHE_MUTEX.synchronize { @changelog_md_cache.merge!(changelogs) } unless changelogs.empty?
           save_release_snapshot
-          push_state(dlg, collect_products_data(false, check_releases: false))
+          now = Time.now.to_i
+          @sync_status['fetched'] = lists.size
+          @sync_status['total'] = repos.size
+          @sync_status['failed'] = failed
+          @sync_status['checked_at'] = now
+          if @dialog
+            push_state(dlg, collect_products_data(false, check_releases: false))
+          end
 
           missing = repos.size - lists.size
-          if attempts_left > 0 && missing > 0
+          if attempts_left > 0 && missing > 0 && @dialog
             fetch_and_render(dlg, repos - lists.keys, force, attempts_left: attempts_left - 1)
-          elsif added_repos.any?
+          elsif added_repos.any? && @dialog
             # Новонайденные расширения (в т.ч. на новом имени после
             # переименования) подтягивают релизы сразу, иначе карточки
             # появятся только при следующем открытии каталога.
             fetch_and_render(dlg, added_repos, force, attempts_left: 0)
           else
-            fetch_commits_async(dlg)
+            @fetching = false
+            @sync_status['fetching'] = false
+            if @dialog
+              push_state(dlg, collect_products_data(false, check_releases: false))
+              fetch_commits_async(dlg)
+            end
+            if @pending_force && @dialog
+              @pending_force = false
+              send_products_to_dialog(force: true)
+            else
+              @pending_force = false
+            end
           end
         end
       )
     rescue StandardError => e
       Dn1sup::Updater.log_error(e)
+      @fetching = false
+      @sync_status['fetching'] = false
     end
 
     # Логи правок: для продуктов с обновлением/сменой версии подтягиваем
@@ -1001,7 +1132,7 @@ module Dn1sup
           commits = fetched.is_a?(Hash) ? fetched : {}
           next if commits.empty?
 
-          @commits_cache.merge!(commits)
+          CACHE_MUTEX.synchronize { @commits_cache.merge!(commits) }
           save_release_snapshot
           push_state(dlg, collect_products_data(false, check_releases: false))
         end
@@ -1026,7 +1157,8 @@ module Dn1sup
 
       payload = {
         'version'   => VERSION,
-        'products'  => products.is_a?(Array) ? products : []
+        'products'  => products.is_a?(Array) ? products : [],
+        'sync'      => sync_payload
       }
       dlg.execute_script("window.pushState(#{JSON.generate(payload)});")
     rescue StandardError => e

@@ -26,7 +26,8 @@ const isMock = !getSketchup()
 const state = reactive({
   ready: false,
   version: '…',
-  products: [],  // [{id,name,description,author,repo,asset,discovered,installed_version,is_installed,latest_version,has_update,status,changelog,commits,release_url,published_at}]
+  products: [],  // [{id,name,description,author,repo,asset,discovered,installed_version,is_installed,latest_version,has_update,has_asset,status,changelog,commits,release_url,published_at}]
+  sync: { fetching: false, fetched: 0, total: 0, failed: [], checked_at: 0, snapshot_saved_at: 0 },
   busy: null,    // { id, action, text } — длительная операция над карточкой
   toast: null    // { kind: 'ok' | 'err' | 'info', text }
 })
@@ -50,6 +51,16 @@ if (typeof window !== 'undefined') {
     state.ready = true
     state.version = payload.version || '—'
     state.products = payload.products || []
+    if (payload.sync && typeof payload.sync === 'object') {
+      state.sync = {
+        fetching: !!payload.sync.fetching,
+        fetched: Number(payload.sync.fetched) || 0,
+        total: Number(payload.sync.total) || 0,
+        failed: Array.isArray(payload.sync.failed) ? payload.sync.failed : [],
+        checked_at: Number(payload.sync.checked_at) || 0,
+        snapshot_saved_at: Number(payload.sync.snapshot_saved_at) || 0
+      }
+    }
     clearBusy(null)
   }
   window.pushResult = function (kind, payload) {

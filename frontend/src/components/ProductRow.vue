@@ -33,6 +33,14 @@
           <component :is="statusIcon" :size="11" />
           {{ statusText }}
         </span>
+        <span
+          v-if="p.has_asset === false"
+          class="inline-flex items-center px-1.5 py-px rounded-full text-[11px] font-medium whitespace-nowrap shrink-0
+                 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-dashed border-slate-300 dark:border-slate-600"
+          title="В предлагаемом релизе на GitHub пока нет .rbz-архива"
+        >
+          нет .rbz
+        </span>
       </div>
 
       <!-- Действия -->

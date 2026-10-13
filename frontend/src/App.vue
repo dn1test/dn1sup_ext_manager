@@ -2,7 +2,7 @@
   <div class="h-full flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 transition-colors">
     <Header
       :version="state.version"
-      :refreshing="refreshing"
+      :refreshing="headerRefreshing"
       v-model:view="view"
       @refresh="onRefresh"
     />
@@ -103,6 +103,7 @@
         <span>Управление расширениями SketchUp из GitHub Releases</span>
       </div>
       <div class="flex items-center gap-3 tabular-nums">
+        <span v-if="syncText" :title="Array.isArray(state.sync.failed) && state.sync.failed.length ? 'Не ответили: ' + state.sync.failed.join(', ') : 'Все репозитории ответили'">{{ syncText }}</span>
         <span>всего: {{ counts.all }}</span>
         <span>установлено: {{ counts.installed }}</span>
         <span>обновлений: {{ counts.updates }}</span>
@@ -176,6 +177,23 @@ function armLoadTimeout() {
 }
 
 const refreshing = ref(false)
+const syncFetching = computed(() => !!(state.sync && state.sync.fetching))
+const headerRefreshing = computed(() => refreshing.value || syncFetching.value)
+
+const syncText = computed(() => {
+  const s = state.sync || {}
+  if (s.fetching) {
+    if (s.total > 0) return `проверка обновлений… ${s.fetched}/${s.total}`
+    return 'проверка обновлений…'
+  }
+  if (s.checked_at > 0 && s.total > 0) {
+    const failed = Array.isArray(s.failed) ? s.failed.length : 0
+    const base = `проверено ${s.fetched}/${s.total}`
+    return failed > 0 ? `${base} · недоступны: ${failed}` : base
+  }
+  if (s.snapshot_saved_at > 0) return 'показаны сохранённые данные'
+  return ''
+})
 
 function onRefresh() {
   armLoadTimeout()

@@ -77,7 +77,8 @@ let mockProducts = [
 export function mockPayload() {
   return {
     version: '0.5.0-mock',
-    products: mockProducts
+    products: mockProducts,
+    sync: { fetching: false, fetched: mockProducts.length, total: mockProducts.length, failed: [], checked_at: Date.now() / 1000 | 0, snapshot_saved_at: 0 }
   }
 }
 

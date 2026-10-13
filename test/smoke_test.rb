@@ -352,6 +352,8 @@ ensure
   UI.singleton_class.send(:remove_method, :stop_timer) rescue nil
   Dn1sup::ExtManager.instance_variable_set(:@dialog, nil)
   Dn1sup::ExtManager.instance_variable_set(:@release_cache, {})
+  Dn1sup::ExtManager.instance_variable_set(:@fetching, false)
+  Dn1sup::ExtManager.instance_variable_set(:@pending_force, false)
   Dn1sup::ExtManager.unhide_all_repos
 end
 
@@ -818,6 +820,95 @@ begin
   cfg_dev = { id: 'dev_src_probe', repo: 'o/r', version: '0.0.1', asset: 'x.rbz' }
   assert 'check!: рабочая копия — без сетевых запросов (nil)',
          Dn1sup::Updater.check!(cfg_dev).nil?
+end
+
+# 22. Кнопка «Обновить»: сводка sync, единый предлагаемый релиз, guard
+begin
+  assert 'REPO_CHECK_TTL задан для экономии квоты', Dn1sup::ExtManager::REPO_CHECK_TTL.to_i >= 60
+
+  # offered_release: список релизов приоритетнее одиночного /latest
+  orig_releases = Dn1sup::Updater.method(:releases)
+  orig_latest2 = Dn1sup::Updater.method(:latest_release)
+  Dn1sup::ExtManager.instance_variable_set(:@releases_cache, {})
+  Dn1sup::ExtManager.instance_variable_set(:@release_cache, {})
+  Dn1sup::Updater.define_singleton_method(:releases) do |*_a, **_k|
+    [{ 'tag_name' => 'v2.0.0', 'published_at' => '2026-10-10T00:00:00Z', 'assets' => [] }]
+  end
+  Dn1sup::Updater.define_singleton_method(:latest_release) { |*_a| { 'tag_name' => 'v9.9.9', 'assets' => [] } }
+  off = Dn1sup::ExtManager.offered_release('o/r', true)
+  assert 'offered_release: список важнее одиночного latest', off && off['tag_name'] == 'v2.0.0', off.inspect
+  Dn1sup::Updater.define_singleton_method(:releases) { |*_a, **_k| [] }
+  Dn1sup::ExtManager.instance_variable_set(:@releases_cache, {})
+  Dn1sup::ExtManager.instance_variable_set(:@release_cache, {})
+  off2 = Dn1sup::ExtManager.offered_release('o/r', true)
+  assert 'offered_release: пустой список — фолбэк на latest', off2 && off2['tag_name'] == 'v9.9.9', off2.inspect
+  Dn1sup::Updater.define_singleton_method(:releases, orig_releases)
+  Dn1sup::Updater.define_singleton_method(:latest_release, orig_latest2)
+  Dn1sup::ExtManager.instance_variable_set(:@releases_cache, {})
+  Dn1sup::ExtManager.instance_variable_set(:@release_cache, {})
+
+  # has_asset: релиз без .rbz помечается для UI
+  Dn1sup::ExtManager.instance_variable_set(
+    :@releases_cache,
+    'dn1test/dn1sup_save_settings' => [
+      { 'tag_name' => 'v9.9.9', 'published_at' => '2026-10-10T00:00:00Z', 'assets' => [] }
+    ]
+  )
+  no_asset = Dn1sup::ExtManager.collect_products_data(false, check_releases: false)
+                                     .find { |p| p['id'] == 'dn1sup_save_settings' }
+  assert 'collect: релиз без .rbz — has_asset false', !!no_asset && no_asset['has_asset'] == false, no_asset.inspect
+  Dn1sup::ExtManager.instance_variable_set(
+    :@releases_cache,
+    'dn1test/dn1sup_save_settings' => [
+      { 'tag_name' => 'v9.9.9', 'published_at' => '2026-10-10T00:00:00Z',
+        'assets' => [{ 'name' => 'dn1sup_save_settings.rbz', 'browser_download_url' => 'https://example.com/x.rbz' }] }
+    ]
+  )
+  with_asset = Dn1sup::ExtManager.collect_products_data(false, check_releases: false)
+                                        .find { |p| p['id'] == 'dn1sup_save_settings' }
+  assert 'collect: релиз с .rbz — has_asset true', !!with_asset && with_asset['has_asset'] == true, with_asset.inspect
+  Dn1sup::ExtManager.instance_variable_set(:@releases_cache, {})
+  Dn1sup::ExtManager.instance_variable_set(:@release_cache, {})
+
+  # push_state несёт сводку sync (счётчик «проверено X/Y» для кнопки)
+  dlg2 = FakeStoreDialog.new
+  Dn1sup::ExtManager.instance_variable_set(:@fetching, false)
+  Dn1sup::ExtManager.instance_variable_set(:@pending_force, false)
+  Dn1sup::ExtManager.instance_variable_set(:@sync_status,
+                                           { 'fetching' => false, 'fetched' => 7, 'total' => 9,
+                                             'failed' => ['o/a'], 'checked_at' => 1_700_000_000,
+                                             'snapshot_saved_at' => 1_699_999_000 })
+  dlg2.scripts.clear
+  Dn1sup::ExtManager.push_state(dlg2, [])
+  sync_script = dlg2.scripts.grep(/\Awindow\.pushState\(/).last.to_s
+  assert 'push_state содержит sync', sync_script.include?('"sync":'), sync_script[0, 160]
+  assert 'push_state sync: счётчик fetched/total', sync_script.include?('"fetched":7') && sync_script.include?('"total":9'), sync_script[0, 200]
+  Dn1sup::ExtManager.instance_variable_set(:@sync_status,
+                                           { 'fetching' => false, 'fetched' => 0, 'total' => 0,
+                                             'failed' => [], 'checked_at' => 0, 'snapshot_saved_at' => 0 })
+
+  # seed_installed_at_baseline: ручной установке ставится базовая дата
+  Sketchup.write_default('Dn1supUpdater', 'installed_at_dn1sup_save_settings', nil)
+  Dn1sup::ExtManager.seed_installed_at_baseline([{ 'id' => 'dn1sup_save_settings', 'is_installed' => true }])
+  assert 'seed: базовая дата установки ставится', !Dn1sup::Updater.installed_at('dn1sup_save_settings').nil?
+  Sketchup.write_default('Dn1supUpdater', 'installed_at_dn1sup_save_settings', nil)
+
+  # guard: повторный refresh во время обхода коалесцируется
+  dlg3 = FakeStoreDialog.new
+  Dn1sup::ExtManager.instance_variable_set(:@dialog, dlg3)
+  Dn1sup::ExtManager.instance_variable_set(:@fetching, true)
+  Dn1sup::ExtManager.instance_variable_set(:@pending_force, false)
+  Dn1sup::ExtManager.send_products_to_dialog(force: true)
+  assert 'guard: повторный force коалесцирован', Dn1sup::ExtManager.instance_variable_get(:@pending_force) == true
+  Dn1sup::ExtManager.instance_variable_set(:@fetching, false)
+  Dn1sup::ExtManager.instance_variable_set(:@pending_force, false)
+  Dn1sup::ExtManager.instance_variable_set(:@dialog, nil)
+ensure
+  Dn1sup::ExtManager.instance_variable_set(:@releases_cache, {})
+  Dn1sup::ExtManager.instance_variable_set(:@release_cache, {})
+  Dn1sup::ExtManager.instance_variable_set(:@fetching, false)
+  Dn1sup::ExtManager.instance_variable_set(:@pending_force, false)
+  Dn1sup::ExtManager.instance_variable_set(:@dialog, nil)
 end
 
 puts "\n#{$failed.zero? ? 'ALL TESTS PASSED' : "#{$failed} FAILED"}"

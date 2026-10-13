@@ -31,6 +31,14 @@
             <component :is="statusIcon" :size="11" />
             {{ statusText }}
           </span>
+          <span
+            v-if="p.has_asset === false"
+            class="inline-flex items-center gap-1 px-1.5 py-px rounded-full text-[11px] font-medium whitespace-nowrap
+                   bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-dashed border-slate-300 dark:border-slate-600"
+            title="В предлагаемом релизе на GitHub пока нет .rbz-архива (тег поднят, сборка ещё идёт) — кнопка обновления покажет точную ошибку"
+          >
+            нет .rbz
+          </span>
         </div>
 
         <p class="text-xs text-slate-500 dark:text-slate-400 leading-tight truncate mb-1" :title="p.description">
@@ -84,7 +92,7 @@
           <button
             v-if="p.has_update"
             class="es-btn-update !h-[30px] !px-2.5 !text-xs"
-            :title="`Обновить расширение до ${p.latest_version}`"
+            :title="p.has_asset === false ? 'В релизе пока нет .rbz-архива — попробуйте позже' : `Обновить расширение до ${p.latest_version}`"
             @click="update(p.id)"
           >
             <Zap :size="13" />
@@ -93,7 +101,7 @@
           <button
             v-else-if="p.status === 'switch'"
             class="es-btn-update !h-[30px] !px-2.5 !text-xs"
-            :title="`Установить v${p.latest_version}: релиз новее по дате, но ниже по номеру (смена схемы нумерации)`"
+            :title="p.has_asset === false ? 'В релизе пока нет .rbz-архива — попробуйте позже' : `Установить v${p.latest_version}: релиз новее по дате, но ниже по номеру (смена схемы нумерации)`"
             @click="update(p.id)"
           >
             <ArrowLeftRight :size="13" />
