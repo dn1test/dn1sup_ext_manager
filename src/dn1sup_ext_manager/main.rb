@@ -20,7 +20,7 @@ module Dn1sup
 
   module ExtManager
     ID      = 'dn1sup_ext_manager'
-    VERSION = '0.14.1'
+    VERSION = '0.14.2'
     REPO    = 'dn1test/dn1sup_ext_manager'
     ASSET   = "#{ID}.rbz"
     PAGE_URL     = "https://github.com/#{REPO}/releases"
@@ -730,8 +730,15 @@ module Dn1sup
         installed_ver = release['tag_name'].to_s.sub(/\Av/i, '')
         installed_ver = entry['version'].to_s.sub(/\Av/i, '') if installed_ver.empty?
         Sketchup.write_default('DN1Sup ExtManager', "installed_#{id}", installed_ver) if defined?(Sketchup)
-        store_log("установлен/обновлён #{id} -> v#{installed_ver} (#{repo})")
-        { 'ok' => true, 'message' => "Расширение «#{name}» (v#{installed_ver}) успешно установлено! Перезапустите SketchUp для полной загрузки компонентов." }
+        # Prod-сборка из GitHub заменяет dev-двойник (<id>_dev из sketchup-dev-mcp)
+        # в текущей сессии: запись dev-варианта отключается, чтобы меню и GUI
+        # не дублировались до перезапуска. Файлы _dev не трогаем (ими управляет
+        # инструмент разработки) — они остаются на диске.
+        dev_off = deactivate_dev_twin(id)
+        store_log("установлен/обновлён #{id} -> v#{installed_ver} (#{repo})#{dev_off ? '; dev-двойник отключён в сессии' : ''}")
+        msg = "Расширение «#{name}» (v#{installed_ver}) успешно установлено! Перезапустите SketchUp для полной загрузки компонентов."
+        msg += ' Dev-вариант отключён в текущей сессии (файлы dev-копии сохранены).' if dev_off
+        { 'ok' => true, 'message' => msg, 'dev_replaced' => !!dev_off }
       else
         store_log("установка #{id} (#{repo}) НЕУДАЧНА: архив не установлен")
         { 'ok' => false, 'error' => "SketchUp не удалось установить архив расширения «#{name}»." }
@@ -746,8 +753,37 @@ module Dn1sup
       res = perform_install(id)
       if res['ok']
         res['message'] = "Расширение успешно обновлено! Перезапустите SketchUp, чтобы новый код загрузился."
+        res['message'] += ' Dev-вариант отключён в текущей сессии (файлы dev-копии сохранены).' if res['dev_replaced']
       end
       res
+    end
+
+    # Отключает dev-двойник (<id>_dev, ставится sketchup-dev-mcp) в текущей
+    # сессии после установки prod-сборки из GitHub. Файлы _dev на диске не
+    # трогает никогда (ими управляет инструмент разработки, не Store).
+    # Возвращает true, если двойник найден и отключён.
+    def deactivate_dev_twin(id)
+      return false unless defined?(Sketchup)
+      return false unless Sketchup.respond_to?(:extensions) && Sketchup.extensions
+
+      dev_id = "#{id}_dev"
+      twin = nil
+      Sketchup.extensions.each do |candidate|
+        c_name = candidate.respond_to?(:name) ? candidate.name.to_s : ''
+        c_id   = candidate.respond_to?(:id) ? candidate.id.to_s : ''
+        if c_name.casecmp?(dev_id) || c_id.casecmp?(dev_id)
+          twin = candidate
+          break
+        end
+      end
+      return false unless twin && twin.respond_to?(:uncheck)
+
+      twin.uncheck
+      store_log("dev-двойник #{dev_id} отключён в сессии (установлен prod #{id})")
+      true
+    rescue StandardError => e
+      Dn1sup::Updater.log_error(e)
+      false
     end
 
     # Удаление расширения (выгрузка и удаление файлов из Plugins)

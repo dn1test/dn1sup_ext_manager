@@ -5,7 +5,7 @@
     "author": "DN1Sup",
     "description": "Каталог расширений DN1Sup: установка, обновление и удаление плагинов из GitHub Releases",
     "repo": "dn1test/dn1sup_ext_manager",
-    "version": "0.14.0"
+    "version": "0.14.2"
   },
   {
     "id": "dn1sup_time_project",
@@ -48,5 +48,19 @@
     "author": "DN1Sup",
     "description": "Экспорт моделей или текущего выделения в glTF/GLB с интерактивным просмотром в браузере или прямо в SketchUp (Three.js)",
     "repo": "dn1test/dn1sup_export_3d"
+  },
+  {
+    "id": "dn1sup_export_pdf2",
+    "name": "DN1Sup Export PDF 2",
+    "author": "DN1Sup",
+    "description": "Экспорт сцен SketchUp в многостраничный PDF-документ с шаблонами страниц, метаданными проекта и интерактивным интерфейсом",
+    "repo": "dn1test/dn1sup_export_pdf2"
+  },
+  {
+    "id": "dn1sup_sketchup_profiles",
+    "name": "DN1Sup SketchUp Profiles",
+    "author": "DN1Sup",
+    "description": "Профили SketchUp: у каждого профиля своя папка расширений и настройки интерфейса; переключение профилей с автоматическим перезапуском SketchUp",
+    "repo": "dn1test/dn1sup_sketchup_profiles"
   }
 ]

@@ -34,7 +34,10 @@
   { "id": "dn1sup_create_project","name": "DN1Sup Create Project",     "repo": "dn1test/dn1sup_create_project" },
   { "id": "dn1sup_autoselect_tag","name": "DN1Sup AutoSelect Tag",     "repo": "dn1test/dn1sup_autoselect_tag" },
   { "id": "dn1sup_comp_add_view", "name": "DN1Sup Component Add View", "repo": "dn1test/dn1sup_comp_add_view" },
-  { "id": "dn1sup_save_settings", "name": "DN1Sup Save Settings",      "repo": "dn1test/dn1sup_save_settings" }
+  { "id": "dn1sup_save_settings", "name": "DN1Sup Save Settings",      "repo": "dn1test/dn1sup_save_settings" },
+  { "id": "dn1sup_export_3d",     "name": "DN1Sup Export 3D",          "repo": "dn1test/dn1sup_export_3d" },
+  { "id": "dn1sup_export_pdf2",   "name": "DN1Sup Export PDF 2",       "repo": "dn1test/dn1sup_export_pdf2" },
+  { "id": "dn1sup_sketchup_profiles", "name": "DN1Sup SketchUp Profiles", "repo": "dn1test/dn1sup_sketchup_profiles" }
 ]
 ```
 
