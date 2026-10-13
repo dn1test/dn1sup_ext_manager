@@ -26,6 +26,7 @@ const isMock = !getSketchup()
 const state = reactive({
   ready: false,
   version: '…',
+  devBuild: false, // загружен dev-вариант расширения (Plugins/<id>_dev), не релиз
   products: [],  // [{id,name,description,author,repo,asset,discovered,installed_version,is_installed,latest_version,has_update,status,changelog,commits,release_url,published_at}]
   busy: null,    // { id, action, text } — длительная операция над карточкой
   toast: null    // { kind: 'ok' | 'err' | 'info', text }
@@ -49,6 +50,7 @@ if (typeof window !== 'undefined') {
     if (!payload) return
     state.ready = true
     state.version = payload.version || '—'
+    state.devBuild = !!payload.dev_build
     state.products = payload.products || []
     clearBusy(null)
   }

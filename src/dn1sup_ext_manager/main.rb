@@ -20,7 +20,7 @@ module Dn1sup
 
   module ExtManager
     ID      = 'dn1sup_ext_manager'
-    VERSION = '0.14.0'
+    VERSION = '0.14.1'
     REPO    = 'dn1test/dn1sup_ext_manager'
     ASSET   = "#{ID}.rbz"
     PAGE_URL     = "https://github.com/#{REPO}/releases"
@@ -36,6 +36,8 @@ module Dn1sup
     PLUGIN_DIR   = File.dirname(__FILE__).freeze
     HTML_PATH    = File.join(PLUGIN_DIR, 'html', 'index.html').freeze
     ICON_DIR     = File.join(PLUGIN_DIR, 'icons').freeze
+    # DEV-вариант живёт в Plugins/<id>_dev/ — признак по имени корневой папки
+    DEV_BUILD    = File.basename(PLUGIN_DIR).end_with?('_dev').freeze
     TOOLBAR_NAME = 'DN1Sup Extension Store'
     CMD_TOOLTIP  = 'DN1Sup Extension Store — каталог, установка и обновление расширений'
     # Актуальная версия формата снапшота релизов (см. save/load_release_snapshot).
@@ -1024,8 +1026,9 @@ module Dn1sup
       return unless dlg
 
       payload = {
-        'version'  => VERSION,
-        'products' => products.is_a?(Array) ? products : []
+        'version'   => VERSION,
+        'dev_build' => DEV_BUILD,
+        'products'  => products.is_a?(Array) ? products : []
       }
       dlg.execute_script("window.pushState(#{JSON.generate(payload)});")
     rescue StandardError => e

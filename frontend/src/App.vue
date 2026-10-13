@@ -3,6 +3,7 @@
     <Header
       :version="state.version"
       :refreshing="refreshing"
+      :dev-build="state.devBuild"
       v-model:view="view"
       @refresh="onRefresh"
     />
