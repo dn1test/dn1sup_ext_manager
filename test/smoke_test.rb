@@ -911,5 +911,99 @@ ensure
   Dn1sup::ExtManager.instance_variable_set(:@dialog, nil)
 end
 
+# 23. Локальная папка разработки: версии, выбор свежайшей, установка
+begin
+  require 'fileutils'
+  dev_root = Dir.mktmpdir('dn1sup_dev')
+  fake_id = 'dn1sup_fake_local'
+  fake_dev = File.join(dev_root, fake_id)
+  FileUtils.mkdir_p(File.join(fake_dev, fake_id))
+  File.write(File.join(fake_dev, fake_id, 'main.rb'), "module X\n  VERSION = '1.2.0'\nend\n")
+  File.write(File.join(fake_dev, "#{fake_id}.rb"), "# loader\n")
+  File.write(File.join(fake_dev, 'registry.json'), JSON.generate([{ 'id' => fake_id, 'version' => '1.2.0' }]))
+
+  src = Dn1sup::Updater.find_local_source(fake_dev, fake_id)
+  assert 'find_local_source: раскладка репозитория расширения', src.is_a?(Hash) && File.file?(src[:loader])
+
+  assert 'local_dev_version: из registry.json папки',
+         Dn1sup::Updater.local_dev_version(fake_dev, fake_id) == '1.2.0'
+  FileUtils.rm(File.join(fake_dev, 'registry.json'))
+  assert 'local_dev_version: fallback VERSION main.rb',
+         Dn1sup::Updater.local_dev_version(fake_dev, fake_id) == '1.2.0'
+  assert 'local_dev_version: нет папки — пусто',
+         Dn1sup::Updater.local_dev_version(File.join(dev_root, 'nope'), fake_id) == ''
+
+  assert 'pick: только локаль', Dn1sup::Updater.pick_freshest('1.0.0', '1.1.0', '') == :local
+  assert 'pick: только github', Dn1sup::Updater.pick_freshest('1.0.0', '', '1.1.0') == :github
+  assert 'pick: ни того ни другого', Dn1sup::Updater.pick_freshest('1.0.0', '', '') == :unknown
+  assert 'pick: локаль свежее github', Dn1sup::Updater.pick_freshest('1.0.0', '2.0.0', '1.5.0') == :local
+  assert 'pick: github свежее локали', Dn1sup::Updater.pick_freshest('1.0.0', '1.5.0', '2.0.0') == :github
+  assert 'pick: актуальная', Dn1sup::Updater.pick_freshest('2.0.0', '2.0.0', '2.0.0') == :current
+  assert 'pick: не установлено — свежее из двух',
+         Dn1sup::Updater.pick_freshest('', '1.0.0', '2.0.0') == :github
+  assert 'pick: не установлено, только локаль',
+         Dn1sup::Updater.pick_freshest(nil, '1.0.0', nil) == :local
+
+  assert 'resolve_dev_dir: явный dev_dir',
+         Dn1sup::Updater.resolve_dev_dir({ id: fake_id, dev_dir: fake_dev }) == fake_dev
+  assert 'resolve_dev_dir: нет папки — nil',
+         Dn1sup::Updater.resolve_dev_dir({ id: 'dn1sup_nope_xyz' }).nil?
+
+  rbz = Dn1sup::Updater.build_local_rbz(fake_dev, fake_id, File.join(dev_root, 'out.rbz'))
+  if rbz
+    assert 'build_local_rbz: валидный .rbz', Dn1sup::Updater.rbz?(rbz), rbz
+  else
+    assert 'build_local_rbz: без zip — nil (допустим fallback копированием)', rbz.nil?
+  end
+
+  orig_releases3 = Dn1sup::Updater.method(:releases)
+  orig_latest3 = Dn1sup::Updater.method(:latest_release)
+  orig_build3 = Dn1sup::Updater.method(:build_local_rbz)
+  orig_resolve3 = Dn1sup::Updater.method(:resolve_dev_dir)
+  Dn1sup::Updater.define_singleton_method(:releases) { |*_a, **_k| [] }
+  Dn1sup::Updater.define_singleton_method(:latest_release) { |*_a| {} }
+
+  # Нет ни папки (resolve подменён в nil — на dev-машине соседние
+  # репозитории реально лежат рядом), ни релизов — честная ошибка
+  Dn1sup::Updater.define_singleton_method(:resolve_dev_dir) { |*_a| nil }
+  res = Dn1sup::ExtManager.perform_check_update('dn1sup_save_settings')
+  assert 'check_update: без источников — ok:false', res['ok'] == false, res.inspect
+  Dn1sup::Updater.define_singleton_method(:resolve_dev_dir, orig_resolve3)
+
+  # Локаль новее: установка из папки (сборка подменена готовым .rbz,
+  # install_from_archive — стабом из шапки теста)
+  fake_rbz = File.join(dev_root, 'fake.rbz')
+  File.binwrite(fake_rbz, "PK#{'x' * 2048}")
+  Dn1sup::Updater.define_singleton_method(:build_local_rbz) { |*_a, **_k| fake_rbz }
+  Dn1sup::ExtManager.instance_variable_set(
+    :@discovered_entries,
+    [{ 'id' => fake_id, 'name' => 'Fake Local', 'repo' => 'dn1test/dn1sup_fake_local', 'dev_path' => fake_dev, 'discovered' => true }]
+  )
+  Sketchup.write_default('DN1Sup ExtManager', "installed_#{fake_id}", '1.0.0')
+  Dn1sup::ExtManager.instance_variable_set(
+    :@releases_cache,
+    { 'dn1test/dn1sup_fake_local' => [{ 'tag_name' => 'v1.0.0', 'published_at' => '2026-01-01T00:00:00Z', 'assets' => [] }] }
+  )
+  res = Dn1sup::ExtManager.perform_check_update(fake_id)
+  assert 'check_update: локаль свежее — установка из папки', res['ok'] == true, res.inspect
+  assert 'check_update: сообщение про локальную папку', res['message'].to_s.include?('локальной'), res['message']
+  assert 'check_update: версия из локали сохранена',
+         Sketchup.read_default('DN1Sup ExtManager', "installed_#{fake_id}", nil) == '1.2.0'
+
+  prods = Dn1sup::ExtManager.collect_products_data(false, check_releases: false)
+  card = prods.find { |p| p['id'] == fake_id }
+  assert 'collect: dev_available/dev_version в payload',
+         !!card && card['dev_available'] == true && card['dev_version'] == '1.2.0', card.inspect
+ensure
+  Dn1sup::Updater.define_singleton_method(:releases, orig_releases3)
+  Dn1sup::Updater.define_singleton_method(:latest_release, orig_latest3)
+  Dn1sup::Updater.define_singleton_method(:build_local_rbz, orig_build3)
+  Dn1sup::ExtManager.instance_variable_set(:@discovered_entries, [])
+  Dn1sup::ExtManager.instance_variable_set(:@release_cache, {})
+  Dn1sup::ExtManager.instance_variable_set(:@releases_cache, {})
+  Sketchup.write_default('DN1Sup ExtManager', 'installed_dn1sup_fake_local', nil)
+  FileUtils.remove_entry(dev_root) if dev_root && Dir.exist?(dev_root)
+end
+
 puts "\n#{$failed.zero? ? 'ALL TESTS PASSED' : "#{$failed} FAILED"}"
 exit($failed.zero? ? 0 : 1)

@@ -20,9 +20,13 @@ module Dn1sup
 
   module ExtManager
     ID      = 'dn1sup_ext_manager'
-    VERSION = '0.15.1'
+    VERSION = '0.16.0'
     REPO    = 'dn1test/dn1sup_ext_manager'
     ASSET   = "#{ID}.rbz"
+    # Папка разработки задана в самом расширении: корень этого репозитория
+    # (исходники — src/<id>.rb + src/<id>/). Кнопка проверки сначала смотрит
+    # её, потом GitHub.
+    DEV_DIR      = File.expand_path('../..', File.dirname(__FILE__)).freeze
     PAGE_URL     = "https://github.com/#{REPO}/releases"
     REGISTRY_URL = "https://raw.githubusercontent.com/#{REPO}/main/registry.json"
 
@@ -700,6 +704,11 @@ module Dn1sup
         installed_ver = installed_version(entry)
         is_installed = !installed_ver.to_s.empty?
 
+        # Локальная папка разработки (путь задан в самом расширении):
+        # версия — для кнопки «проверить обновление» (круг со стрелками).
+        dev_dir = repo_stale ? nil : dev_dir_for(entry)
+        dev_ver = dev_dir ? Dn1sup::Updater.local_dev_version(dev_dir, id) : ''
+
         # Мёртвый репозиторий: неустановленные карточки исчезают из каталога
         # (и из вкладки «Обновления»), установленные остаются с пометкой.
         next nil if repo_stale && !is_installed
@@ -764,6 +773,8 @@ module Dn1sup
           'has_update'        => has_update,
           'has_asset'         => has_asset,
           'status'            => status.to_s,
+          'dev_available'     => !dev_dir.nil?,
+          'dev_version'       => dev_ver.to_s,
           'changelog'         => changelog,
           'commits'           => commits,
           'release_url'       => release_url,
@@ -775,7 +786,88 @@ module Dn1sup
       []
     end
 
+    # ---- Локальная папка разработки -----------------------------------------
+
+    # Путь к локальной папке задаётся в самом расширении: поле dev_path /
+    # dev_dir записи реестра первично, дальше — ENV и соседние папки
+    # (см. Dn1sup::Updater.resolve_dev_dir). nil = папки нет, обновление
+    # только из GitHub.
+    def dev_dir_for(entry_or_id)
+      id = entry_or_id.is_a?(Hash) ? entry_or_id['id'].to_s : entry_or_id.to_s
+      hint = ''
+      if entry_or_id.is_a?(Hash)
+        hint = (entry_or_id['dev_path'] || entry_or_id['dev_dir']).to_s
+      end
+      cfg = { id: id }
+      cfg[:dev_dir] = hint unless hint.empty?
+      Dn1sup::Updater.resolve_dev_dir(cfg)
+    rescue StandardError => e
+      Dn1sup::Updater.log_error(e)
+      nil
+    end
+
+    # Версия расширения в локальной папке ('' = папки нет или версия не читается).
+    def local_dev_version_for(entry_or_id)
+      id = entry_or_id.is_a?(Hash) ? entry_or_id['id'].to_s : entry_or_id.to_s
+      dir = dev_dir_for(entry_or_id)
+      dir ? Dn1sup::Updater.local_dev_version(dir, id) : ''
+    rescue StandardError => e
+      Dn1sup::Updater.log_error(e)
+      ''
+    end
+
     # ---- Установка / Обновление / Удаление --------------------------------
+
+    # Проверка обновления карточки (кнопка «круг со стрелками»): версия
+    # сначала ищется в локальной папке разработки, потом на GitHub —
+    # ставится та, что свежее. Папки нет — только GitHub.
+    def perform_check_update(id)
+      entry = find_entry(id)
+      unless entry
+        store_log("проверка '#{id}': расширение не найдено в реестре")
+        return { 'ok' => false, 'error' => "Расширение «#{id}» не найдено в реестре." }
+      end
+
+      repo = entry['repo'].to_s
+      name = entry['name'].to_s.empty? ? id : entry['name'].to_s
+
+      if stale?(repo)
+        store_log("проверка '#{id}': репозиторий #{repo} недоступен (удалён или переименован)")
+        return { 'ok' => false,
+                 'error' => "#{name}: репозиторий #{repo} недоступен на GitHub (удалён или переименован)." }
+      end
+
+      installed_ver = installed_version(entry)
+      dev_dir = dev_dir_for(entry)
+      local_ver = dev_dir ? Dn1sup::Updater.local_dev_version(dev_dir, id) : ''
+      release = offered_release(repo, true)
+      github_ver = release.is_a?(Hash) && release.key?('tag_name') ? release['tag_name'].to_s.sub(/\Av/i, '') : ''
+
+      if local_ver.empty? && github_ver.empty?
+        store_log("проверка '#{id}': ни локальной папки, ни релизов #{repo}")
+        return { 'ok' => false,
+                 'error' => "#{name}: не удалось проверить обновления — нет ни локальной папки, ни релизов на GitHub." }
+      end
+
+      pick = Dn1sup::Updater.pick_freshest(installed_ver, local_ver, github_ver)
+      if pick == :current
+        detail = []
+        detail << "локально #{local_ver}" unless local_ver.empty?
+        detail << "GitHub #{github_ver}" unless github_ver.empty?
+        store_log("проверка '#{id}': актуальная версия #{installed_ver}#{detail.empty? ? '' : " (#{detail.join(', ')})"}")
+        return { 'ok' => true,
+                 'message' => "#{name}: у вас уже установлена актуальная версия (#{installed_ver})." }
+      end
+
+      res = perform_install(id)
+      if res['ok'] && pick == :local
+        store_log("проверка '#{id}': установлено из локальной папки v#{local_ver}")
+      end
+      res
+    rescue StandardError => e
+      Dn1sup::Updater.log_error(e)
+      { 'ok' => false, 'error' => "Исключение при проверке: #{e.message}" }
+    end
 
     # Установка расширения по ID (в том числе найденного на GitHub)
     def perform_install(id)
@@ -795,6 +887,27 @@ module Dn1sup
       end
 
       release = offered_release(repo, true)
+      installed_ver = installed_version(entry)
+      dev_dir = dev_dir_for(entry)
+      local_ver = (dev_dir && !dev_dir.empty?) ? Dn1sup::Updater.local_dev_version(dev_dir, id) : ''
+      github_ver = release.is_a?(Hash) && release.key?('tag_name') ? release['tag_name'].to_s.sub(/\Av/i, '') : ''
+
+      # Локальная папка свежее GitHub и установленной — ставим из неё
+      # (.rbz собирается на лету). Папки нет — только GitHub-путь ниже.
+      if Dn1sup::Updater.pick_freshest(installed_ver, local_ver, github_ver) == :local
+        ok = Dn1sup::Updater.install_from_local_dir(dev_dir, id, name)
+        if ok
+          installed_ver = local_ver
+          Sketchup.write_default('DN1Sup ExtManager', "installed_#{id}", installed_ver) if defined?(Sketchup)
+          store_log("установлен/обновлён #{id} -> v#{installed_ver} (локальная папка #{dev_dir})")
+          msg = "Расширение «#{name}» (v#{installed_ver}) установлено из локальной папки! Перезапустите SketchUp для полной загрузки компонентов."
+          return { 'ok' => true, 'message' => msg }
+        else
+          store_log("установка #{id} из локальной папки НЕУДАЧНА")
+          return { 'ok' => false, 'error' => "Не удалось установить «#{name}» из локальной папки (#{dev_dir})." }
+        end
+      end
+
       unless release.is_a?(Hash) && release.key?('tag_name')
         store_log("установка '#{id}': релизы #{repo} недоступны")
         return { 'ok' => false, 'error' => "#{name}: не удалось получить список релизов с GitHub." }
@@ -1257,6 +1370,10 @@ module Dn1sup
         iid = parse_json(param)['id']
         notify_action_result(iid, 'update', perform_update(iid))
         send_products_to_dialog(force: false)
+      when 'check_update'
+        iid = parse_json(param)['id']
+        notify_action_result(iid, 'check_update', perform_check_update(iid))
+        send_products_to_dialog(force: false)
       when 'confirm_uninstall'
         # Подтверждение удаления через нативный диалог SketchUp
         # (window.confirm в HtmlDialog на части сборок подавлен).
@@ -1451,7 +1568,7 @@ module Dn1sup
       menu = common.add_submenu('Extension Store')
       menu.add_item(catalog_command)
       menu.add_item('Проверить обновления менеджера') do
-        Dn1sup::Updater.check!({ id: ID, repo: REPO, version: VERSION, asset: ASSET, force: true, async: true })
+        Dn1sup::Updater.check_local_first!({ id: ID, repo: REPO, version: VERSION, asset: ASSET, dev_dir: DEV_DIR, force: true, async: true })
       end
       menu.add_separator
       menu.add_item('О реестре') { open_registry_repo }
@@ -1469,7 +1586,7 @@ module Dn1sup
       # Фоновая проверка обновлений менеджера при запуске (сеть в потоке,
       # результат — ненавязчивое уведомление, без модальных диалогов).
       UI.start_timer(20, false) do
-        Dn1sup::Updater.check!({ id: ID, repo: REPO, version: VERSION, asset: ASSET, async: true })
+        Dn1sup::Updater.check_local_first!({ id: ID, repo: REPO, version: VERSION, asset: ASSET, dev_dir: DEV_DIR, async: true })
       end
 
       file_loaded(__FILE__)

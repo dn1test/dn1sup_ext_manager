@@ -26,7 +26,7 @@ const isMock = !getSketchup()
 const state = reactive({
   ready: false,
   version: '…',
-  products: [],  // [{id,name,description,author,repo,asset,discovered,installed_version,is_installed,latest_version,has_update,has_asset,status,changelog,commits,release_url,published_at}]
+  products: [],  // [{id,name,description,author,repo,asset,discovered,installed_version,is_installed,latest_version,has_update,has_asset,status,dev_available,dev_version,changelog,commits,release_url,published_at}]
   sync: { fetching: false, fetched: 0, total: 0, failed: [], checked_at: 0, snapshot_saved_at: 0 },
   busy: null,    // { id, action, text } — длительная операция над карточкой
   toast: null    // { kind: 'ok' | 'err' | 'info', text }
@@ -154,6 +154,17 @@ export function update(id) {
   }
   state.busy = { id, action: 'update', text: 'Обновление…' }
   callRubyJson('update', { id })
+}
+
+/** Проверка обновления: сначала локальная папка разработки, потом GitHub. */
+export function checkUpdate(id) {
+  if (isMock) {
+    state.busy = { id, action: 'check_update', text: 'Проверка…' }
+    applyMockAction('check_update', { id })
+    return
+  }
+  state.busy = { id, action: 'check_update', text: 'Проверка…' }
+  callRubyJson('check_update', { id })
 }
 
 /** Подтверждение удаления — через нативный диалог SketchUp (window.confirm

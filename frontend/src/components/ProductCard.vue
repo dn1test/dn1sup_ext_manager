@@ -89,6 +89,15 @@
           </span>
         </template>
         <template v-else>
+          <!-- Проверить обновление: сначала локальная папка, потом GitHub -->
+          <button
+            class="rounded-full p-1.5 h-[30px] w-[30px] flex items-center justify-center
+                   text-slate-400 hover:text-brand-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shrink-0"
+            :title="checkUpdateTitle"
+            @click="checkUpdate(p.id)"
+          >
+            <RotateCw :size="14" />
+          </button>
           <button
             v-if="p.has_update"
             class="es-btn-update !h-[30px] !px-2.5 !text-xs"
@@ -183,12 +192,21 @@ import { computed, ref } from 'vue'
 import {
   ChevronDown, Loader2, Zap, RotateCw, Download, Trash2, ArrowLeftRight, Sparkles, EyeOff, User
 } from 'lucide-vue-next'
-import { state, install, update, confirmUninstall, hide } from '../composables/useSketchupBridge'
+import { state, install, update, checkUpdate, confirmUninstall, hide } from '../composables/useSketchupBridge'
 import { useProductStatus } from '../composables/useProductStatus'
 import { productIcon, productIconClass } from '../composables/useProductIcon'
 
 const props = defineProps({ product: { type: Object, required: true } })
 const p = computed(() => props.product)
+
+// Подсказка кнопки проверки: есть ли локальная папка и её версия.
+const checkUpdateTitle = computed(() => {
+  const dev = (p.value.dev_version || '').trim()
+  const base = 'Проверить обновление: сначала локальная папка разработки, потом GitHub'
+  if (p.value.dev_available && dev) return `${base} (локально: v${dev})`
+  if (p.value.dev_available) return `${base} (локальная папка найдена)`
+  return `${base} (локальной папки нет — только GitHub)`
+})
 
 const CHANGELOG_FALLBACK = 'Лог изменений для этого расширения отсутствует.'
 

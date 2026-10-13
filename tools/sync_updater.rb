@@ -3,10 +3,12 @@ base = File.expand_path('..', __dir__)
 master = File.join(base, 'shared', 'dn1sup_updater.rb')
 targets = %w[
   dn1sup_autoselect_tag/shared/dn1sup_updater.rb
-  dn1sup_autoselect_tag/dn1sup_autoselect_tag/dn1sup_autoselect_tag/dn1sup_updater.rb
   dn1sup_comp_add_view/shared/dn1sup_updater.rb
   dn1sup_create_project/shared/dn1sup_updater.rb
+  dn1sup_export_3d/shared/dn1sup_updater.rb
+  dn1sup_export_pdf2/shared/dn1sup_updater.rb
   dn1sup_save_settings/shared/dn1sup_updater.rb
+  dn1sup_sketchup_profiles/shared/dn1sup_updater.rb
   dn1sup_time_project/shared/dn1sup_updater.rb
 ]
 require 'digest'

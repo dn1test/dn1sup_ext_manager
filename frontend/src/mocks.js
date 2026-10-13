@@ -133,6 +133,17 @@ export function applyMockAction(name, params = {}) {
     return
   }
 
+  if (name === 'check_update') {
+    setTimeout(() => {
+      window.pushResult('action_result', {
+        id, action: 'check_update', ok: true,
+        message: `«${item ? item.name : id}»: у вас уже установлена актуальная версия.`
+      })
+      setTimeout(() => window.pushState(mockPayload()), 50)
+    }, 800)
+    return
+  }
+
   if (name === 'confirm_uninstall') {
     // В браузере без SketchUp считаем подтверждённым
     setTimeout(() => window.pushResult('confirm_uninstall', { id, ok: true }), 100)
