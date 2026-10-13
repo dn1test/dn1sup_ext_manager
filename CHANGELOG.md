@@ -7,6 +7,24 @@
 репозиториях (`dn1test/dn1sup_*`); этот репозиторий хранит только реестр
 каталога (`registry.json`: id/name/repo), необходимый для установки и обновлений.
 
+## [0.15.0] — 2026-10-13
+
+### DN1Sup Extension Store (v0.15.0)
+- **Удалён функционал dev/prod (второй id).** Расширение существует в
+  единственном экземпляре (`dn1sup_ext_manager`, без `<id>_dev`-двойника):
+  удалены `deactivate_dev_twin`, флаг `dev_replaced`, `DEV_BUILD` и бейдж DEV
+  в шапке каталога, поле `dev_build` в `push_state`. Разработка ведётся в
+  рабочей копии под тем же id с перезагрузкой `Dn1sup::ExtManager.reload`;
+  прод-сборка проверяется установкой `.rbz` из `packages/`.
+- **Self-update рабочей копии отключён по пути загрузки**
+  (`Dn1sup::Updater.dev_source?` вместо `dev_install?`): код вне папки
+  `Plugins` обновляется из рабочей папки через reload, а не из GitHub
+  Releases. Проверка маркера `.sketchup_dev.json` оставлена только для
+  переходного периода; сами файлы `.sketchup_dev.json` удалены.
+- Сборщик: `DEV_EXCLUDE_*` переименованы в `RBZ_EXCLUDE_*`.
+- Smoke-тесты: секция dev-двойника заменена проверкой установки без
+  dev-пометок и тестами `dev_source?`/`check!`.
+
 ## [0.14.2] — 2026-10-13
 
 ### DN1Sup Extension Store (v0.14.2)

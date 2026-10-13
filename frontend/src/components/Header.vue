@@ -12,12 +12,6 @@
           <span
             class="px-1.5 py-0.5 rounded bg-slate-200/70 dark:bg-slate-800 text-[10px] font-mono text-slate-500 dark:text-slate-400"
           >v{{ version }}</span>
-          <span
-            v-if="devBuild"
-            class="px-1.5 py-0.5 rounded-full text-[10px] font-bold tracking-wide whitespace-nowrap
-                   bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300"
-            title="Работает dev-вариант (рабочая копия sketchup-dev-mcp), не релиз"
-          >DEV</span>
         </div>
         <p class="text-[10px] text-slate-400 dark:text-slate-500 leading-tight">
           каталог, установка и обновление расширений
@@ -60,8 +54,7 @@ import { useTheme } from '../composables/useTheme'
 defineProps({
   version: { type: String, default: '—' },
   refreshing: { type: Boolean, default: false },
-  view: { type: String, default: 'cards' },
-  devBuild: { type: Boolean, default: false }
+  view: { type: String, default: 'cards' }
 })
 defineEmits(['refresh', 'update:view'])
 

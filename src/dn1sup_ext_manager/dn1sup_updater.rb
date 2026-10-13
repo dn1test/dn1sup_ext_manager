@@ -50,7 +50,7 @@ module Dn1sup
     def check!(cfg)
       id_str = cfg[:id].to_s
       return nil if @checking[id_str]
-      return nil if dev_install?
+      return nil if dev_source?
 
       @checking[id_str] = true
 
@@ -84,13 +84,17 @@ module Dn1sup
       end
     end
 
-    # DEV-канал: расширение установлено sketchup-dev-mcp из папки разработки —
-    # рядом с этим файлом лежит .sketchup_dev.json (в rbz он не попадает:
-    # pack-скрипты исключают скрытые файлы). Обновления такой установки
-    # приходят только из dev-папки (ext_install / ext_reload), поэтому
-    # self-update из GitHub Releases отключён.
-    def dev_install?
-      File.exist?(File.join(File.dirname(__FILE__), '.sketchup_dev.json'))
+    # Рабочая копия разработки (один id + reload): код загружен не из
+    # папки Plugins SketchUp, а из рабочей папки репозитория — обновления
+    # такой копии приходят из рабочей папки через reload, а не из
+    # GitHub Releases, поэтому self-update отключён.
+    # Проверка маркера `.sketchup_dev.json` оставлена для переходного
+    # периода (старые dev-установки в Plugins).
+    def dev_source?
+      return true if File.exist?(File.join(File.dirname(__FILE__), '.sketchup_dev.json'))
+
+      dir = File.expand_path(File.dirname(__FILE__))
+      !dir.include?('Plugins')
     rescue StandardError
       false
     end

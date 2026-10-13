@@ -24,16 +24,15 @@ id_filter      = ARGV[0]
 EXT_BASE = ENV['SKETCHUP_EXT_ROOT'] || File.expand_path('../..', __dir__)
 
 # Что не должно попадать в релизный .rbz
-DEV_EXCLUDE_FILES = %w[
+RBZ_EXCLUDE_FILES = %w[
   dev_updater.rb
-  .sketchup_dev.json
   README.md
   README.MD
   .gitignore
   package.json
 ].freeze
 
-DEV_EXCLUDE_DIRS = %w[
+RBZ_EXCLUDE_DIRS = %w[
   test
   tests
   .git
@@ -123,9 +122,9 @@ def pack(id, source, shared_updater, reg_path)
       FileUtils.cp(reg_path, File.join(data_dir, 'registry.json'))
     end
 
-    # 5. Выкидываем dev-файлы из архива
-    DEV_EXCLUDE_FILES.each { |f| FileUtils.rm_f(File.join(stage_plugin_dir, f)) }
-    DEV_EXCLUDE_DIRS.each  { |d| FileUtils.rm_rf(File.join(stage_plugin_dir, d)) }
+    # 5. Выкидываем файлы разработки из архива
+    RBZ_EXCLUDE_FILES.each { |f| FileUtils.rm_f(File.join(stage_plugin_dir, f)) }
+    RBZ_EXCLUDE_DIRS.each  { |d| FileUtils.rm_rf(File.join(stage_plugin_dir, d)) }
 
     # 6. Архивация в .rbz
     # Dir.glob трактует '\' как escape-символ, поэтому пути стадии на Windows

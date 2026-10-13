@@ -122,7 +122,7 @@ ruby tools/list_rbz.rb
 - автоматически извлекает версию из лоадера;
 - синхронизирует версии в [registry.json](registry.json) и встроенный кэш;
 - копирует свежий `dn1sup_updater.rb` и реестр в архив;
-- исключает dev-файлы (`test/`, `.git`, `.zcode`, `node_modules`, `frontend`, `.sketchup_dev.json`).
+- исключает файлы разработки (`test/`, `.git`, `.zcode`, `node_modules`, `frontend`).
 
 ---
 
@@ -152,14 +152,16 @@ ruby test/live_github_test.rb
 
 ---
 
-## Dev-режим
+## Разработка: перезагрузка без перезапуска
 
 - В Ruby Console SketchUp можно перезагрузить файлы Extension Store без перезапуска программы:
   ```ruby
   Dn1sup::ExtManager.reload
   ```
+  (один id — dev-варианта с суффиксом `_dev` больше нет; рабочая копия
+  правится напрямую, прод-сборка проверяется установкой `.rbz` из `packages/`).
 - Для принудительной проверки обновлений менеджера:
-меню **Extensions → DN1Sup → Extension Store → «Проверить обновления менеджера»**.
+  меню **Extensions → DN1Sup → Extension Store → «Проверить обновления менеджера»**.
 
 ---
 

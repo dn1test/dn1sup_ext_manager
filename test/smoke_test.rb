@@ -159,10 +159,18 @@ log = $dialog_log.grep(/INSTALL_FROM_ARCHIVE/).last
 assert 'install_from_archive зафиксирован', !!log, log
 
 # 5. Полный цикл check! (silent, force — без pergola)
-summary = Dn1sup::Updater.check!(
-  id: 'test', repo: 'zinin/sketchup-mcp2', version: '0.0.1',
-  asset: asset['name'], force: true, silent: true
-)
+# Тест грузит апдейтер из рабочей копии (вне Plugins) — guard dev_source?
+# отключаем стабом, логику check! тестируем напрямую (сам guard — в секции 21).
+orig_dev_source = Dn1sup::Updater.method(:dev_source?)
+Dn1sup::Updater.define_singleton_method(:dev_source?) { false }
+begin
+  summary = Dn1sup::Updater.check!(
+    id: 'test', repo: 'zinin/sketchup-mcp2', version: '0.0.1',
+    asset: asset['name'], force: true, silent: true
+  )
+ensure
+  Dn1sup::Updater.define_singleton_method(:dev_source?, orig_dev_source)
+end
 assert 'check! вернул summary', summary.is_a?(Hash) && summary[:latest] == rel['tag_name'], summary.inspect
 assert 'check! записал метку времени', Sketchup.read_default('Dn1supUpdater', 'last_test').is_a?(Integer)
 
@@ -763,8 +771,8 @@ assert 'compare_commits: непустые строки', cmts.all? { |m| m.is_a?
 assert 'compare_commits: несуществующие теги -> []',
        Dn1sup::Updater.compare_commits('dn1test/dn1sup_time_project', 'v9.9.9', 'v0.0.1') == []
 
-# 20. Реестр без дубликатов + установка prod заменяет dev-двойник в сессии
-# (офлайн: сеть подменяется стабами, Extension Manager — фейком)
+# 20. Реестр без дубликатов + установка/обновление (один id, без dev-двойников)
+# (офлайн: сеть подменяется стабами)
 begin
   reg = Dn1sup::ExtManager.load_registry
   ids = reg.map { |e| e['id'].to_s }
@@ -781,40 +789,6 @@ begin
   assert 'реестр: версия менеджера совпадает с лоадером',
          mgr && mgr['version'].to_s == Dn1sup::ExtManager::VERSION, mgr && mgr['version'].inspect
 
-  # Фейк Extension Manager: prod + dev-двойник одного расширения
-  class FakeDn1supExt
-    attr_reader :name, :id, :version
-
-    def initialize(name, id, version = '1.0.0')
-      @name = name
-      @id = id
-      @version = version
-      @unchecked = false
-    end
-
-    def uncheck
-      @unchecked = true
-    end
-
-    def unchecked?
-      @unchecked
-    end
-  end
-
-  class FakeDn1supExtManager
-    def initialize(entries = [])
-      @entries = entries
-    end
-
-    def [](key)
-      @entries.find { |e| e.name == key || e.id == key }
-    end
-
-    def each(&blk)
-      @entries.each(&blk)
-    end
-  end
-
   fake_release = {
     'tag_name' => 'v9.9.9',
     'assets' => [{ 'name' => 'dn1sup_save_settings.rbz', 'browser_download_url' => 'https://example.com/x.rbz' }]
@@ -824,32 +798,26 @@ begin
   Dn1sup::Updater.define_singleton_method(:latest_release) { |*_a| fake_release }
   Dn1sup::Updater.define_singleton_method(:install_from_url) { |*_a, **_k| true }
 
-  prod_entry = FakeDn1supExt.new('DN1Sup Save Settings', 'dn1sup_save_settings')
-  dev_entry = FakeDn1supExt.new('DN1Sup Save Settings [DEV]', 'dn1sup_save_settings_dev')
-  Sketchup.define_singleton_method(:extensions) { FakeDn1supExtManager.new([prod_entry, dev_entry]) }
-
   res = Dn1sup::ExtManager.perform_install('dn1sup_save_settings')
-  assert 'install: prod ставится при живом dev-двойнике', res['ok'] == true, res.inspect
-  assert 'install: dev-двойник отключён в сессии (uncheck)', dev_entry.unchecked?
-  assert 'install: prod-запись не тронута', !prod_entry.unchecked?
-  assert 'install: флаг dev_replaced', res['dev_replaced'] == true
-  assert 'install: сообщение упоминает dev-вариант', res['message'].to_s.include?('Dev-вариант')
-
-  # Без dev-двойника установка идёт как раньше, без пометки
-  prod_only = FakeDn1supExt.new('DN1Sup Save Settings', 'dn1sup_save_settings')
-  Sketchup.define_singleton_method(:extensions) { FakeDn1supExtManager.new([prod_only]) }
-  res2 = Dn1sup::ExtManager.perform_install('dn1sup_save_settings')
-  assert 'install: без dev-двойника ok', res2['ok'] == true, res2.inspect
-  assert 'install: без dev-двойника флаг пуст', !res2['dev_replaced']
-  assert 'install: без dev-двойника сообщение без пометки', !res2['message'].to_s.include?('Dev-вариант')
+  assert 'install: ok', res['ok'] == true, res.inspect
+  assert 'install: сообщение без dev-пометки', !res['message'].to_s.include?('Dev-вариант')
+  assert 'install: без флага dev_replaced', !res.key?('dev_replaced')
 
   upd = Dn1sup::ExtManager.perform_update('dn1sup_save_settings')
-  assert 'update: делегирует install без dev-пометки', upd['ok'] == true && !upd['message'].to_s.include?('Dev-вариант')
+  assert 'update: делегирует install', upd['ok'] == true, upd.inspect
 ensure
   Dn1sup::Updater.define_singleton_method(:latest_release, orig_latest)
   Dn1sup::Updater.define_singleton_method(:install_from_url, orig_install)
-  Sketchup.singleton_class.send(:remove_method, :extensions) rescue nil
   Sketchup.write_default('DN1Sup ExtManager', 'installed_dn1sup_save_settings', nil)
+end
+
+# 21. dev_source?: self-update отключён для рабочей копии (один id + reload)
+begin
+  # Тест исполняется из рабочей копии репозитория (вне Plugins) — guard срабатывает
+  assert 'dev_source?: рабочая копия вне Plugins', Dn1sup::Updater.dev_source? == true
+  cfg_dev = { id: 'dev_src_probe', repo: 'o/r', version: '0.0.1', asset: 'x.rbz' }
+  assert 'check!: рабочая копия — без сетевых запросов (nil)',
+         Dn1sup::Updater.check!(cfg_dev).nil?
 end
 
 puts "\n#{$failed.zero? ? 'ALL TESTS PASSED' : "#{$failed} FAILED"}"
