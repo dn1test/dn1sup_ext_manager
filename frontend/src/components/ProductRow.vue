@@ -11,16 +11,6 @@
         <span class="text-xs font-semibold leading-tight truncate">{{ p.name }}</span>
         <span class="es-id-badge shrink-0">{{ p.id }}</span>
         <span
-          v-if="hasDev"
-          class="inline-flex items-center px-1.5 py-px rounded-full text-[11px] font-medium whitespace-nowrap shrink-0"
-          :class="devActive
-            ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300'
-            : 'bg-amber-50 dark:bg-amber-900/20 text-amber-600/90 dark:text-amber-400/80 border border-amber-200/70 dark:border-amber-800/50'"
-          :title="devTitle"
-        >
-          DEV
-        </span>
-        <span
           v-if="p.discovered"
           class="inline-flex items-center gap-1 px-1.5 py-px rounded-full text-[11px] font-medium whitespace-nowrap shrink-0
                  bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300"
@@ -127,14 +117,6 @@ const props = defineProps({ product: { type: Object, required: true } })
 const p = computed(() => props.product)
 
 const { statusText, statusCls, statusIcon, versionText, versionTitle } = useProductStatus(p)
-
-// Пометка расширения разработки: dev-копия установлена — бейдж виден всегда,
-// даже когда в сессии активен PROD; активный канал различается стилем бейджа.
-const hasDev = computed(() => p.value.channels?.dev === true)
-const devActive = computed(() => p.value.active_channel === 'dev')
-const devTitle = computed(() => devActive.value
-  ? 'Расширение работает из dev-канала (рабочая копия sketchup-dev-mcp), а не из релиза'
-  : 'Расширение в разработке: установлена dev-копия, сейчас активен PROD-канал')
 
 const isBusy = computed(() => state.busy?.id === p.value.id)
 const busy = computed(() => (isBusy.value ? state.busy : null))

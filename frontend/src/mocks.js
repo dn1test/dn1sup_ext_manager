@@ -5,8 +5,6 @@
  * и GitHub Releases — здесь их дублировать нельзя.
  */
 
-let mockChannel = 'prod'
-
 let mockProducts = [
   {
     id: 'demo_extension_one',
@@ -19,8 +17,6 @@ let mockProducts = [
     is_installed: true,
     latest_version: '1.0.0',
     has_update: false,
-    channels: { prod: true, dev: false },
-    active_channel: 'prod',
     changelog: 'Демо-лог изменений: первая строка показывается на карточке.\nВторая строка видна только в раскрытом логе.',
     release_url: 'https://example.com/demo-extension-one/releases',
     published_at: ''
@@ -37,8 +33,6 @@ let mockProducts = [
     latest_version: '1.0.0',
     has_update: true,
     status: 'update',
-    channels: { prod: true, dev: true },
-    active_channel: 'prod',
     changelog: 'Демо-лог изменений: первая строка показывается на карточке.\nВторая строка видна только в раскрытом логе.',
     release_url: 'https://example.com/demo-extension-two/releases',
     published_at: ''
@@ -55,8 +49,6 @@ let mockProducts = [
     latest_version: '0.4.1',
     has_update: false,
     status: 'switch',
-    channels: { prod: true, dev: true },
-    active_channel: 'dev',
     changelog: 'Демо-лог изменений: первая строка показывается на карточке.\nВторая строка видна только в раскрытом логе.',
     commits: ['feat: демо-коммит — сменена схема нумерации', 'fix: демо-коммит — мелкие правки'],
     release_url: 'https://example.com/demo-extension-three/releases',
@@ -75,8 +67,6 @@ let mockProducts = [
     latest_version: '0.1.0',
     has_update: false,
     status: '',
-    channels: { prod: false, dev: false },
-    active_channel: '',
     changelog: 'Демо-лог изменений: первая строка показывается на карточке.\nВторая строка видна только в раскрытом логе.',
     commits: [],
     release_url: 'https://example.com/demo-extension-four/releases',
@@ -87,7 +77,6 @@ let mockProducts = [
 export function mockPayload() {
   return {
     version: '0.5.0-mock',
-    channel: mockChannel,
     products: mockProducts
   }
 }
@@ -107,26 +96,6 @@ export function applyMockAction(name, params = {}) {
 
   if (name === 'refresh') {
     setTimeout(() => window.pushState(mockPayload()), 300)
-    return
-  }
-
-  if (name === 'set_channel') {
-    const target = params.channel === 'dev' ? 'dev' : 'prod'
-    setTimeout(() => {
-      mockChannel = target
-      mockProducts.forEach(p => {
-        if (p.channels && (p.channels.prod || p.channels.dev)) {
-          p.active_channel = p.channels[target] ? target : ''
-        }
-      })
-      window.pushResult('action_result', {
-        id: target, action: 'set_channel', ok: true,
-        message: target === 'dev'
-          ? 'Переключено на DEV (в SketchUp Store перезагрузится без перезапуска).'
-          : 'Переключено на PROD.'
-      })
-      setTimeout(() => window.pushState(mockPayload()), 50)
-    }, 600)
     return
   }
 

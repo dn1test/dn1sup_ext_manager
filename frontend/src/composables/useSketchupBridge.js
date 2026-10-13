@@ -26,9 +26,7 @@ const isMock = !getSketchup()
 const state = reactive({
   ready: false,
   version: '…',
-  channel: 'prod',   // активный канал расширений: 'prod' | 'dev'
-  channelBusy: false, // идёт переключение канала
-  products: [],  // [{id,name,description,author,repo,asset,discovered,installed_version,is_installed,latest_version,has_update,status,changelog,commits,release_url,published_at,channels,active_channel}]
+  products: [],  // [{id,name,description,author,repo,asset,discovered,installed_version,is_installed,latest_version,has_update,status,changelog,commits,release_url,published_at}]
   busy: null,    // { id, action, text } — длительная операция над карточкой
   toast: null    // { kind: 'ok' | 'err' | 'info', text }
 })
@@ -51,8 +49,6 @@ if (typeof window !== 'undefined') {
     if (!payload) return
     state.ready = true
     state.version = payload.version || '—'
-    if (payload.channel === 'prod' || payload.channel === 'dev') state.channel = payload.channel
-    state.channelBusy = false
     state.products = payload.products || []
     clearBusy(null)
   }
@@ -63,13 +59,11 @@ if (typeof window !== 'undefined') {
 
 function emitResult(kind, payload) {
   if (kind === 'error') {
-    state.channelBusy = false
     clearBusy(null)
     toast('err', payload.message || 'Ошибка Ruby', 7000)
     return
   }
   if (kind === 'action_result') {
-    if (payload.action === 'set_channel') state.channelBusy = false
     clearBusy(payload.id)
     if (payload.ok) {
       toast('ok', payload.message || 'Операция успешно завершена!')
@@ -170,18 +164,6 @@ export function hide(repo) {
     return
   }
   callRubyJson('hide', { repo })
-}
-
-/** Переключение канала расширений dev/prod без перезапуска SketchUp.
- *  Сам Store при переключении закроется и перезагрузится в новом канале. */
-export function setChannel(channel) {
-  if (state.channelBusy || (state.channel === channel && !isMock)) return
-  state.channelBusy = true
-  if (isMock) {
-    applyMockAction('set_channel', { channel })
-    return
-  }
-  callRubyJson('set_channel', { channel })
 }
 
 export { state, isMock, toast, clearBusy }

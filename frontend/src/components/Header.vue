@@ -20,29 +20,6 @@
     </div>
 
     <div class="flex items-center gap-1">
-      <!-- Переключатель канала dev/prod: выгружает расширения чужого канала
-           и загружает нужные без перезапуска SketchUp -->
-      <div
-        class="flex items-center rounded-lg p-0.5 mr-1 shrink-0"
-        :class="switching ? 'opacity-50 pointer-events-none' : ''"
-        title="Канал расширений: PROD — релизы из Store, DEV — рабочие копии из sketchup-dev-mcp. Переключение без перезапуска SketchUp."
-      >
-        <button
-          class="px-2 py-1 rounded-md text-[10px] font-bold tracking-wide transition-colors"
-          :class="channel !== 'dev'
-            ? 'bg-slate-700 text-white dark:bg-slate-600'
-            : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'"
-          @click="$emit('set-channel', 'prod')"
-        >PROD</button>
-        <button
-          class="px-2 py-1 rounded-md text-[10px] font-bold tracking-wide transition-colors"
-          :class="channel === 'dev'
-            ? 'bg-amber-500 text-white'
-            : 'text-slate-400 hover:text-amber-600 dark:hover:text-amber-400'"
-          @click="$emit('set-channel', 'dev')"
-        >DEV</button>
-      </div>
-      <Loader2 v-if="switching" :size="14" class="animate-spin text-amber-500 shrink-0" />
       <button
         class="p-1.5 rounded-lg text-slate-400 hover:text-brand-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
         :title="view === 'cards' ? 'Переключить на список' : 'Переключить на карточки'"
@@ -71,17 +48,15 @@
 </template>
 
 <script setup>
-import { Package, RotateCw, Sun, Moon, Rows3, LayoutGrid, Loader2 } from 'lucide-vue-next'
+import { Package, RotateCw, Sun, Moon, Rows3, LayoutGrid } from 'lucide-vue-next'
 import { useTheme } from '../composables/useTheme'
 
 defineProps({
   version: { type: String, default: '—' },
   refreshing: { type: Boolean, default: false },
-  view: { type: String, default: 'cards' },
-  channel: { type: String, default: 'prod' },
-  switching: { type: Boolean, default: false }
+  view: { type: String, default: 'cards' }
 })
-defineEmits(['refresh', 'update:view', 'set-channel'])
+defineEmits(['refresh', 'update:view'])
 
 const { isDark, toggleTheme } = useTheme()
 </script>

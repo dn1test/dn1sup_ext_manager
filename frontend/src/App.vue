@@ -3,11 +3,8 @@
     <Header
       :version="state.version"
       :refreshing="refreshing"
-      :channel="state.channel"
-      :switching="state.channelBusy"
       v-model:view="view"
       @refresh="onRefresh"
-      @set-channel="setChannel"
     />
 
     <!-- Поиск и фильтры -->
@@ -138,7 +135,7 @@ import { Search, SearchX, Loader2, Hourglass, RotateCw, CheckCircle2, AlertCircl
 import Header from './components/Header.vue'
 import ProductCard from './components/ProductCard.vue'
 import ProductRow from './components/ProductRow.vue'
-import { state, refresh, loadState, setChannel } from './composables/useSketchupBridge'
+import { state, refresh, loadState } from './composables/useSketchupBridge'
 import { useTheme } from './composables/useTheme'
 
 useTheme()
