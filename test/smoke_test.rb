@@ -943,6 +943,40 @@ begin
          Dn1sup::Updater.pick_freshest('', '1.0.0', '2.0.0') == :github
   assert 'pick: не установлено, только локаль',
          Dn1sup::Updater.pick_freshest(nil, '1.0.0', nil) == :local
+  # 23b. Выбор свежайшей по дате/времени при равном номере версии
+  assert 'pick: равные версии без дат — current (без переустановок)',
+         Dn1sup::Updater.pick_freshest('0.17.0', '', '0.17.0') == :current
+  assert 'pick: равные версии без дат, только локаль — current',
+         Dn1sup::Updater.pick_freshest('0.17.0', '0.17.0', '') == :current
+  assert 'pick: та же версия, релиз свежее установки — github',
+         Dn1sup::Updater.pick_freshest('1.2.3', '', '1.2.3',
+                                        installed_at: 1_600_000_000,
+                                        github_time: '2026-10-09T00:00:00Z') == :github
+  assert 'pick: та же версия, релиз старее установки — current',
+         Dn1sup::Updater.pick_freshest('1.2.3', '', '1.2.3',
+                                        installed_at: 1_900_000_000,
+                                        github_time: '2026-10-09T00:00:00Z') == :current
+  assert 'pick: ниже по номеру, но свежее по дате (switch) — github',
+         Dn1sup::Updater.pick_freshest('2.4.1', '', '0.4.1',
+                                        installed_at: 1_600_000_000,
+                                        github_time: '2026-10-09T06:17:55Z') == :github
+  assert 'pick: ниже по номеру и старее по дате — current',
+         Dn1sup::Updater.pick_freshest('2.4.1', '', '0.4.1',
+                                        installed_at: 1_900_000_000,
+                                        github_time: '2026-10-09T06:17:55Z') == :current
+  assert 'pick: локаль равна, но файлы свежее — local',
+         Dn1sup::Updater.pick_freshest('1.2.0', '1.2.0', '1.0.0',
+                                        installed_at: 1_600_000_000,
+                                        local_time: 1_700_000_000,
+                                        github_time: '2026-01-01T00:00:00Z') == :local
+  assert 'to_unixtime: ISO-строка и число',
+         Dn1sup::Updater.to_unixtime('2026-10-09T00:00:00Z') == Time.parse('2026-10-09T00:00:00Z').to_i &&
+         Dn1sup::Updater.to_unixtime(1_600_000_000) == 1_600_000_000 &&
+         Dn1sup::Updater.to_unixtime(nil) == 0 && Dn1sup::Updater.to_unixtime('') == 0
+  assert 'local_dev_mtime: время исходников папки',
+         Dn1sup::Updater.local_dev_mtime(fake_dev, fake_id).is_a?(Integer)
+  assert 'local_dev_mtime: нет папки — nil',
+         Dn1sup::Updater.local_dev_mtime(File.join(dev_root, 'nope'), fake_id).nil?
 
   assert 'resolve_dev_dir: явный dev_dir',
          Dn1sup::Updater.resolve_dev_dir({ id: fake_id, dev_dir: fake_dev }) == fake_dev
@@ -989,6 +1023,41 @@ begin
   assert 'check_update: сообщение про локальную папку', res['message'].to_s.include?('локальной'), res['message']
   assert 'check_update: версия из локали сохранена',
          Sketchup.read_default('DN1Sup ExtManager', "installed_#{fake_id}", nil) == '1.2.0'
+
+  # Дата/время: та же версия, но релиз GitHub свежее установки — обновление;
+  # релиз старее установки — «актуальная версия» (без переустановки).
+  begin
+    date_id = 'dn1sup_save_settings'
+    saved_lists = Dn1sup::ExtManager.instance_variable_get(:@releases_cache)
+    saved_cache = Dn1sup::ExtManager.instance_variable_get(:@release_cache)
+    orig_install_url = Dn1sup::Updater.method(:install_from_url)
+    Dn1sup::Updater.define_singleton_method(:resolve_dev_dir) { |*_a| nil }
+    Dn1sup::Updater.define_singleton_method(:releases) do |*_a, **_k|
+      [{ 'tag_name' => 'v1.0.0', 'published_at' => '2026-10-09T00:00:00Z',
+         'assets' => [{ 'name' => 'dn1sup_save_settings.rbz', 'browser_download_url' => 'https://example.com/x.rbz' }] }]
+    end
+    Dn1sup::Updater.define_singleton_method(:install_from_url) { |*_a, **_k| true }
+    Sketchup.write_default('DN1Sup ExtManager', "installed_#{date_id}", '1.0.0')
+    Sketchup.write_default('Dn1supUpdater', "installed_at_#{date_id}", 1_600_000_000)
+    Dn1sup::ExtManager.instance_variable_set(:@releases_cache, {})
+    Dn1sup::ExtManager.instance_variable_set(:@release_cache, {})
+    res = Dn1sup::ExtManager.perform_check_update(date_id)
+    assert 'check_update: та же версия, релиз свежее — обновление', res['ok'] == true, res.inspect
+    Sketchup.write_default('Dn1supUpdater', "installed_at_#{date_id}", 1_900_000_000)
+    Dn1sup::ExtManager.instance_variable_set(:@releases_cache, {})
+    Dn1sup::ExtManager.instance_variable_set(:@release_cache, {})
+    res = Dn1sup::ExtManager.perform_check_update(date_id)
+    assert 'check_update: та же версия, релиз старее — актуальная',
+           res['ok'] == true && res['message'].to_s.include?('актуальная'), res.inspect
+  ensure
+    Dn1sup::Updater.define_singleton_method(:install_from_url, orig_install_url)
+    Dn1sup::Updater.define_singleton_method(:resolve_dev_dir, orig_resolve3)
+    Dn1sup::Updater.define_singleton_method(:releases) { |*_a, **_k| [] }
+    Dn1sup::ExtManager.instance_variable_set(:@releases_cache, saved_lists)
+    Dn1sup::ExtManager.instance_variable_set(:@release_cache, saved_cache)
+    Sketchup.write_default('DN1Sup ExtManager', 'installed_dn1sup_save_settings', nil)
+    Sketchup.write_default('Dn1supUpdater', 'installed_at_dn1sup_save_settings', nil)
+  end
 
   prods = Dn1sup::ExtManager.collect_products_data(false, check_releases: false)
   card = prods.find { |p| p['id'] == fake_id }

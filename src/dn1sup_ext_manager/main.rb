@@ -20,7 +20,7 @@ module Dn1sup
 
   module ExtManager
     ID      = 'dn1sup_ext_manager'
-    VERSION = '0.16.0'
+    VERSION = '0.17.0'
     REPO    = 'dn1test/dn1sup_ext_manager'
     ASSET   = "#{ID}.rbz"
     # Папка разработки задана в самом расширении: корень этого репозитория
@@ -820,7 +820,9 @@ module Dn1sup
 
     # Проверка обновления карточки (кнопка «круг со стрелками»): версия
     # сначала ищется в локальной папке разработки, потом на GitHub —
-    # ставится та, что свежее. Папки нет — только GitHub.
+    # ставится та, что свежее. При равном номере версии свежесть — по
+    # дате/времени (mtime файлов папки / published_at релиза против даты
+    # установки). Папки нет — только GitHub.
     def perform_check_update(id)
       entry = find_entry(id)
       unless entry
@@ -840,8 +842,11 @@ module Dn1sup
       installed_ver = installed_version(entry)
       dev_dir = dev_dir_for(entry)
       local_ver = dev_dir ? Dn1sup::Updater.local_dev_version(dev_dir, id) : ''
+      local_time = dev_dir ? Dn1sup::Updater.local_dev_mtime(dev_dir, id) : nil
       release = offered_release(repo, true)
       github_ver = release.is_a?(Hash) && release.key?('tag_name') ? release['tag_name'].to_s.sub(/\Av/i, '') : ''
+      github_time = release.is_a?(Hash) ? Dn1sup::Updater.release_time(release) : nil
+      installed_at = Dn1sup::Updater.installed_at(id)
 
       if local_ver.empty? && github_ver.empty?
         store_log("проверка '#{id}': ни локальной папки, ни релизов #{repo}")
@@ -849,7 +854,10 @@ module Dn1sup
                  'error' => "#{name}: не удалось проверить обновления — нет ни локальной папки, ни релизов на GitHub." }
       end
 
-      pick = Dn1sup::Updater.pick_freshest(installed_ver, local_ver, github_ver)
+      pick = Dn1sup::Updater.pick_freshest(installed_ver, local_ver, github_ver,
+                                           installed_at: installed_at,
+                                           github_time: github_time,
+                                           local_time: local_time)
       if pick == :current
         detail = []
         detail << "локально #{local_ver}" unless local_ver.empty?
@@ -890,11 +898,19 @@ module Dn1sup
       installed_ver = installed_version(entry)
       dev_dir = dev_dir_for(entry)
       local_ver = (dev_dir && !dev_dir.empty?) ? Dn1sup::Updater.local_dev_version(dev_dir, id) : ''
+      local_time = (dev_dir && !dev_dir.empty?) ? Dn1sup::Updater.local_dev_mtime(dev_dir, id) : nil
       github_ver = release.is_a?(Hash) && release.key?('tag_name') ? release['tag_name'].to_s.sub(/\Av/i, '') : ''
+      github_time = release.is_a?(Hash) ? Dn1sup::Updater.release_time(release) : nil
+      installed_at = Dn1sup::Updater.installed_at(id)
 
       # Локальная папка свежее GitHub и установленной — ставим из неё
-      # (.rbz собирается на лету). Папки нет — только GitHub-путь ниже.
-      if Dn1sup::Updater.pick_freshest(installed_ver, local_ver, github_ver) == :local
+      # (.rbz собирается на лету). Свежесть — по номеру версии, а при равном
+      # номере — по дате/времени (mtime файлов vs дата установки).
+      # Папки нет — только GitHub-путь ниже.
+      if Dn1sup::Updater.pick_freshest(installed_ver, local_ver, github_ver,
+                                       installed_at: installed_at,
+                                       github_time: github_time,
+                                       local_time: local_time) == :local
         ok = Dn1sup::Updater.install_from_local_dir(dev_dir, id, name)
         if ok
           installed_ver = local_ver

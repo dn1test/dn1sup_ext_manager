@@ -688,27 +688,109 @@ module Dn1sup
       end
     end
 
-    # Чистое сравнение трёх версий: :local / :github / :current / :unknown.
-    # Локаль и GitHub сравниваются между собой — ставится свежайшая.
-    def pick_freshest(installed_ver, local_ver, github_ver)
+    # Время файла исходников локальной папки (unixtime) — для сравнения при
+    # равной версии: правки без бампа версии тоже считаются обновлением.
+    # Берётся max mtime лоадера и файлов папки плагина (исключая мусор,
+    # не попадающий в .rbz). nil = время неизвестно.
+    def local_dev_mtime(dev_dir, id)
+      src = find_local_source(dev_dir, id)
+      return nil unless src
+
+      times = []
+      begin
+        times << File.mtime(src[:loader]).to_i if src[:loader] && File.file?(src[:loader])
+      rescue StandardError
+        nil
+      end
+      begin
+        Dir.glob(File.join(src[:plugin_dir].to_s, '**', '*')).each do |entry|
+          begin
+            next unless File.file?(entry)
+
+            rel = entry.sub("#{src[:plugin_dir]}/", '').tr('\\', '/')
+            next if LOCAL_RBZ_EXCLUDE_DIRS.any? { |d| rel == d || rel.start_with?("#{d}/") }
+            next if LOCAL_RBZ_EXCLUDE_FILES.include?(File.basename(rel))
+
+            times << File.mtime(entry).to_i
+          rescue StandardError
+            next
+          end
+        end
+      rescue StandardError
+        nil
+      end
+      times.max
+    end
+
+    # Любую дату к unixtime: Time / Integer / строка ISO-8601 / nil -> Integer.
+    # Неизвестное/битое — 0 («время неизвестно»).
+    def to_unixtime(value)
+      return 0 if value.nil?
+      return value.to_i if value.is_a?(Numeric)
+      return value.to_i if value.is_a?(Time)
+
+      s = value.to_s.strip
+      return 0 if s.empty?
+      return s.to_i if s =~ /\A\d+\z/
+
+      Time.parse(s).to_i
+    rescue StandardError, ArgumentError
+      0
+    end
+
+    # Источник свежее установленного? Номер версии выше — да; при равном
+    # номере — дата/время источника позже даты установки (переизпуск без
+    # бампа версии); при более низком номере, но более поздней дате — тоже
+    # да (смена схемы нумерации, зеркалит product_status 'switch').
+    # Без даты установки — только по номеру версии (как раньше).
+    def source_fresher?(installed_norm, source_norm, installed_at_i, source_time_i)
+      return true if newer?(source_norm, installed_norm)
+      return false unless installed_at_i.to_i > 0 && source_time_i.to_i > installed_at_i.to_i
+
+      true
+    end
+
+    # Чистое сравнение трёх источников: :local / :github / :current / :unknown.
+    # Локаль и GitHub сравниваются между собой — ставится свежайший.
+    # Версии равны, а дата/время источника свежее даты установки
+    # (installed_at:, github_time:, local_time:) — тоже свежее, ставится
+    # источник с более поздней датой. Без дат — старое поведение (только
+    # номера версий). Даты молча игнорируются, когда установка неизвестна.
+    def pick_freshest(installed_ver, local_ver, github_ver, installed_at: nil, github_time: nil, local_time: nil)
       inst = installed_ver.to_s.sub(/\Av/i, '')
       loc = local_ver.to_s.sub(/\Av/i, '')
       gh = github_ver.to_s.sub(/\Av/i, '')
       return :unknown if loc.empty? && gh.empty?
-      return :github if loc.empty?
-      return :local if gh.empty?
-      return :current if !inst.empty? && loc == inst && gh == inst
+
+      inst_at_i = to_unixtime(installed_at)
+      gh_t_i = to_unixtime(github_time)
+      loc_t_i = to_unixtime(local_time)
 
       if inst.empty?
+        return :github if loc.empty?
+        return :local if gh.empty?
+
         return newer?(norm_version(loc), norm_version(gh)) ? :local : :github
       end
-      loc_newer = newer?(norm_version(loc), norm_version(inst))
-      gh_newer = newer?(norm_version(gh), norm_version(inst))
-      return :current unless loc_newer || gh_newer
-      return :local if loc_newer && !gh_newer
-      return :github if gh_newer && !loc_newer
 
-      newer?(norm_version(loc), norm_version(gh)) ? :local : :github
+      inst_n = norm_version(inst)
+      loc_fresh = loc.empty? ? false : source_fresher?(inst_n, norm_version(loc), inst_at_i, loc_t_i)
+      gh_fresh = gh.empty? ? false : source_fresher?(inst_n, norm_version(gh), inst_at_i, gh_t_i)
+      # Равная версия без известной даты установки — не свежее (как раньше).
+      loc_fresh = false if !loc.empty? && loc == inst && !(newer?(norm_version(loc), inst_n)) && inst_at_i <= 0
+      gh_fresh = false if !gh.empty? && gh == inst && !(newer?(norm_version(gh), inst_n)) && inst_at_i <= 0
+      return :current unless loc_fresh || gh_fresh
+      return :local if loc_fresh && !gh_fresh
+      return :github if gh_fresh && !loc_fresh
+
+      loc_n = norm_version(loc)
+      gh_n = norm_version(gh)
+      return :local if newer?(loc_n, gh_n)
+      return :github if newer?(gh_n, loc_n)
+
+      # Версии равны и оба свежее по дате — ставим источник с более поздней
+      # датой; при равных датах — локаль (правки разработчика приоритетнее).
+      loc_t_i >= gh_t_i ? :local : :github
     end
 
     # Проверка обновления с приоритетом локальной папки (кнопка «круг со
@@ -737,7 +819,8 @@ module Dn1sup
           nil
         end
         local_ver = dev_dir ? local_dev_version(dev_dir, id_str) : ''
-        { dev_dir: dev_dir, local_ver: local_ver, fetched: fetch_latest(cfg) }
+        local_mtime = dev_dir ? local_dev_mtime(dev_dir, id_str) : nil
+        { dev_dir: dev_dir, local_ver: local_ver, local_mtime: local_mtime, fetched: fetch_latest(cfg) }
       end
       done = lambda do |res|
         result = nil
@@ -769,18 +852,28 @@ module Dn1sup
       current = (cfg[:version] || cfg['version']).to_s.sub(/\Av/i, '')
 
       github_ver = ''
+      github_time = nil
       if fetched.is_a?(Hash)
         github_ver = fetched[:latest].to_s.sub(/\Av/i, '')
         github_ver = fetched[:release]['tag_name'].to_s.sub(/\Av/i, '') if github_ver.empty? && fetched[:release].is_a?(Hash)
+        github_time = release_time(fetched[:release]) if fetched[:release].is_a?(Hash)
       end
 
-      pick = pick_freshest(current, local_ver, github_ver)
+      pick = pick_freshest(current, local_ver, github_ver,
+                           installed_at: installed_at(id_str),
+                           github_time: github_time,
+                           local_time: res[:local_mtime] || res['local_mtime'])
       mark_checked(id_str)
       case pick
       when :local
+        fresh_note = if !local_ver.empty? && local_ver == current
+                       "Локальная папка разработки (#{dev_dir}): файлы новее установленной сборки #{current}."
+                     else
+                       "Локальная папка разработки (#{dev_dir}): версия #{local_ver} свежее установленной #{current}."
+                     end
         summary = {
           id: id_str, latest: local_ver, current: current,
-          notes: "Локальная папка разработки (#{dev_dir}): версия #{local_ver} свежее установленной #{current}.",
+          notes: fresh_note,
           page_url: '', asset_url: '', source: 'local', dev_dir: dev_dir.to_s
         }
         offer_local_install(summary, background: !force) unless silent
