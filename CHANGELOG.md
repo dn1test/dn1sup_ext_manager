@@ -7,6 +7,26 @@
 репозиториях (`dn1test/dn1sup_*`); этот репозиторий хранит только реестр
 каталога (`registry.json`: id/name/repo), необходимый для установки и обновлений.
 
+## [0.17.1] — 2026-10-15
+
+### DN1Sup Extension Store (v0.17.1)
+- **Исправлена переустановка при смешанных копиях апдейтера
+  (`wrong number of arguments (given 4, expected 3)`).**
+  Файл `dn1sup_updater.rb` лежит в каждом расширении, а в память SketchUp
+  грузится один общий модуль — после обновления менеджера старые копии из
+  других расширений затирали новые методы `pick_freshest`/`product_status`
+  (3 аргумента без kwargs) и роняли установку/проверку.
+  `perform_install`/`perform_check_update` теперь догружают bundled-копию
+  менеджера, если она новее (`ensure_updater!` по `UPDATER_VERSION`), а при
+  невозможности — деградируют к старому поведению без дат
+  (`safe_pick_freshest`/`safe_product_status`/`safe_install_from_url`).
+- **Обратная совместимость методов апдейтера.** `pick_freshest`,
+  `product_status` и `install_from_url` принимают позиционный Hash опций
+  (так Ruby 2.7 упаковывает kwargs для старых сигнатур) наравне с kwargs —
+  старые и новые копии не роняют друг друга.
+- Тексты ошибок установки/проверки указывают на `dn1sup_updater.log`
+  (backtrace уже писался туда через `log_error`).
+
 ## [0.17.0] — 2026-10-14
 
 ### DN1Sup Extension Store (v0.17.0)

@@ -1074,5 +1074,104 @@ ensure
   FileUtils.remove_entry(dev_root) if dev_root && Dir.exist?(dev_root)
 end
 
+# 24. Смешанные копии апдейтера в Plugins: старый модуль в памяти не роняет
+# установку/проверку (симптом: "wrong number of arguments (given 4, expected 3)").
+begin
+  orig_pick24 = Dn1sup::Updater.method(:pick_freshest)
+  orig_status24 = Dn1sup::Updater.method(:product_status)
+  orig_install_url24 = Dn1sup::Updater.method(:install_from_url)
+  orig_mtime24 = Dn1sup::Updater.method(:local_dev_mtime)
+
+  # Новые методы принимают позиционный Hash опций (упаковка kwargs на Ruby 2.7)
+  assert 'pick: позиционный Hash опций вместо kwargs',
+         Dn1sup::Updater.pick_freshest('1.2.3', '', '1.2.3',
+                                        { installed_at: 1_600_000_000,
+                                          github_time: '2026-10-09T00:00:00Z' }) == :github
+  assert 'product_status: позиционный Hash опций вместо kwargs',
+         Dn1sup::Updater.product_status(
+           '0.4.1',
+           { 'tag_name' => 'v0.4.1', 'published_at' => '2026-10-09T06:17:55Z' },
+           [{ 'tag_name' => 'v0.4.1', 'published_at' => '2026-10-09T06:17:55Z' }],
+           { installed_at: 1_600_000_000 }) == 'switch'
+
+  # Симуляция старого апдейтера из соседнего расширения: методы без kwargs,
+  # без local_dev_mtime и без UPDATER_VERSION (как v0.16.0 и старше).
+  Dn1sup::Updater.define_singleton_method(:pick_freshest) do |inst, loc, gh|
+    if loc.to_s.empty? && gh.to_s.empty?
+      :unknown
+    elsif loc.to_s.empty?
+      :github
+    elsif gh.to_s.empty?
+      :local
+    elsif inst.to_s.empty?
+      :github
+    else
+      :current
+    end
+  end
+  Dn1sup::Updater.define_singleton_method(:product_status) do |inst, offered, _list = nil|
+    if inst.to_s.empty?
+      nil
+    elsif offered.is_a?(Hash) && offered['tag_name'].to_s.sub(/\Av/i, '') == inst.to_s.sub(/\Av/i, '')
+      'current'
+    else
+      'update'
+    end
+  end
+  Dn1sup::Updater.define_singleton_method(:install_from_url) { |*_a| true }
+  Dn1sup::Updater.singleton_class.send(:remove_method, :local_dev_mtime)
+  Dn1sup::Updater.send(:remove_const, :UPDATER_VERSION)
+
+  # Прямой вызов нового стиля против старого метода — та самая ошибка из тоста
+  begin
+    Dn1sup::Updater.pick_freshest('1.0', '1.0', '1.0',
+                                   installed_at: 1, github_time: 2, local_time: 3)
+    assert 'старый pick_freshest: kwargs роняют вызов', false
+  rescue ArgumentError => e
+    assert 'старый pick_freshest: текст ошибки как в тосте', e.message =~ /given 4, expected 3/, e.message
+  end
+
+  assert 'safe_local_mtime: без метода — nil, без исключений',
+         Dn1sup::ExtManager.safe_local_mtime('some_dir', 'dn1sup_save_settings').nil?
+
+  # Фолбэк без догрузки (bundled-версия 0 — load пропускается): установка
+  # идёт по старому поведению, исключений нет.
+  Dn1sup::ExtManager.instance_variable_set(:@bundled_updater_version, 0)
+  orig_releases24 = Dn1sup::Updater.method(:releases)
+  orig_latest24 = Dn1sup::Updater.method(:latest_release)
+  fake_release24 = {
+    'tag_name' => 'v9.9.9',
+    'assets' => [{ 'name' => 'dn1sup_save_settings.rbz', 'browser_download_url' => 'https://example.com/x.rbz' }]
+  }
+  Dn1sup::Updater.define_singleton_method(:releases) { |*_a, **_k| [] }
+  Dn1sup::Updater.define_singleton_method(:latest_release) { |*_a| fake_release24 }
+  res = Dn1sup::ExtManager.perform_install('dn1sup_save_settings')
+  assert 'install против старого апдейтера: ok без исключения', res['ok'] == true, res.inspect
+  assert 'install против старого апдейтера: без тоста про исключение',
+         !res['error'].to_s.include?('Исключение'), res.inspect
+  Dn1sup::Updater.define_singleton_method(:releases, orig_releases24)
+  Dn1sup::Updater.define_singleton_method(:latest_release, orig_latest24)
+  Sketchup.write_default('DN1Sup ExtManager', 'installed_dn1sup_save_settings', nil)
+
+  # Самолечение: ensure_updater! догружает bundled-копию менеджера (v3),
+  # kwargs-вызовы снова работают в полную силу (с датами).
+  Dn1sup::ExtManager.send(:remove_instance_variable, :@bundled_updater_version)
+  Dn1sup::ExtManager.ensure_updater!
+  assert 'ensure_updater!: версия модуля — 3',
+         defined?(Dn1sup::Updater::UPDATER_VERSION) && Dn1sup::Updater::UPDATER_VERSION.to_i == 3
+  assert 'ensure_updater!: kwargs снова принимаются',
+         Dn1sup::Updater.method(:pick_freshest).parameters.any? { |t, _| t == :key }
+  assert 'ensure_updater!: даты снова учитываются',
+         Dn1sup::Updater.pick_freshest('1.2.3', '', '1.2.3',
+                                        installed_at: 1_600_000_000,
+                                        github_time: '2026-10-09T00:00:00Z') == :github
+ensure
+  Dn1sup::Updater.define_singleton_method(:pick_freshest, orig_pick24)
+  Dn1sup::Updater.define_singleton_method(:product_status, orig_status24)
+  Dn1sup::Updater.define_singleton_method(:install_from_url, orig_install_url24)
+  Dn1sup::Updater.define_singleton_method(:local_dev_mtime, orig_mtime24)
+  Sketchup.write_default('DN1Sup ExtManager', 'installed_dn1sup_save_settings', nil)
+end
+
 puts "\n#{$failed.zero? ? 'ALL TESTS PASSED' : "#{$failed} FAILED"}"
 exit($failed.zero? ? 0 : 1)

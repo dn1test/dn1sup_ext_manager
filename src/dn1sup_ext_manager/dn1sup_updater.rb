@@ -38,6 +38,16 @@ module Dn1sup
       'Accept-Encoding'  => 'identity'
     }.freeze unless defined?(HEADERS)
 
+    # Версия общего апдейтера. Копия файла лежит в КАЖДОМ расширении, в память
+    # SketchUp загружается одна (кто последний встал — того и методы), поэтому
+    # после обновления менеджера в Plugins могут соседствовать копии разных
+    # версий. Менеджер сравнивает константу загруженного модуля со своей
+    # bundled-копией и догружает свою, если она новее (см. ensure_updater!).
+    # Методы при этом обратно совместимы (позиционный Hash опций + kwargs),
+    # чтобы старые и новые копии не роняли друг друга с
+    # "wrong number of arguments (given 4, expected 3)".
+    UPDATER_VERSION = 3 unless defined?(UPDATER_VERSION) && UPDATER_VERSION.to_i >= 3
+
     @checking ||= {}
     @registry_cache ||= {}
 
@@ -144,7 +154,7 @@ module Dn1sup
     # /orgs/{owner}/repos. Постранично: per_page=100, до REPOS_MAX_PAGES
     # страниц — иначе при >100 репозиториях хвост молча терялся.
     # Возвращает Array JSON-объектов или [] при ошибке.
-    REPOS_MAX_PAGES = 5
+    REPOS_MAX_PAGES = 5 unless defined?(REPOS_MAX_PAGES)
 
     def repos_of_owner(owner)
       require 'net/http'
@@ -356,7 +366,14 @@ module Dn1sup
     #               отсутствии по дате установки (installed_at, unixtime);
     #   'current' — версии совпадают;
     #   nil       — нет данных (релизы недоступны или расширение не установлено).
-    def product_status(installed_ver, offered, list = nil, installed_at: nil)
+    # opts — позиционный Hash опций ({ installed_at: ... }): так Ruby 2.7
+    # упаковывает kwargs при вызове старого 3-аргументного метода, а также
+    # явный Hash от совместимых вызывающих. Приоритет — у явных kwargs.
+    def product_status(installed_ver, offered, list = nil, opts = nil, installed_at: nil)
+      if installed_at.nil? && opts.is_a?(Hash)
+        installed_at = opts[:installed_at] if opts.key?(:installed_at)
+        installed_at = opts['installed_at'] if installed_at.nil? && opts.key?('installed_at')
+      end
       return nil if installed_ver.to_s.empty? || offered.nil? || offered['tag_name'].to_s.empty?
 
       tag  = offered['tag_name'].to_s.sub(/\Av/i, '')
@@ -387,7 +404,13 @@ module Dn1sup
     # id — идентификатор расширения: при успешной установке фиксируется дата
     # сборки (installed_at_<id>), по которой потом распознаются переизданные
     # релизы без бампа версии.
-    def install_from_url(url, what = 'расширение', silent = false, id: nil)
+    # opts — позиционный Hash опций ({ id: ... }): совместимость со старыми
+    # вызывающими и упаковкой kwargs на Ruby 2.7. Приоритет — у явного kwargs.
+    def install_from_url(url, what = 'расширение', silent = false, opts = nil, id: nil)
+      if id.nil? && opts.is_a?(Hash)
+        id = opts[:id] if opts.key?(:id)
+        id = opts['id'] if id.nil? && opts.key?('id')
+      end
       url = url.to_s
       if url.empty?
         log_debug("install_from_url(#{what}): пустой URL — отмена")
@@ -756,7 +779,25 @@ module Dn1sup
     # (installed_at:, github_time:, local_time:) — тоже свежее, ставится
     # источник с более поздней датой. Без дат — старое поведение (только
     # номера версий). Даты молча игнорируются, когда установка неизвестна.
-    def pick_freshest(installed_ver, local_ver, github_ver, installed_at: nil, github_time: nil, local_time: nil)
+    # opts — позиционный Hash опций ({ installed_at:, github_time:,
+    # local_time: }): так Ruby 2.7 упаковывает kwargs при вызове старого
+    # 3-аргументного метода, а также явный Hash от совместимых вызывающих.
+    # Приоритет — у явных kwargs.
+    def pick_freshest(installed_ver, local_ver, github_ver, opts = nil, installed_at: nil, github_time: nil, local_time: nil)
+      if opts.is_a?(Hash)
+        if installed_at.nil?
+          installed_at = opts[:installed_at] if opts.key?(:installed_at)
+          installed_at = opts['installed_at'] if installed_at.nil? && opts.key?('installed_at')
+        end
+        if github_time.nil?
+          github_time = opts[:github_time] if opts.key?(:github_time)
+          github_time = opts['github_time'] if github_time.nil? && opts.key?('github_time')
+        end
+        if local_time.nil?
+          local_time = opts[:local_time] if opts.key?(:local_time)
+          local_time = opts['local_time'] if local_time.nil? && opts.key?('local_time')
+        end
+      end
       inst = installed_ver.to_s.sub(/\Av/i, '')
       loc = local_ver.to_s.sub(/\Av/i, '')
       gh = github_ver.to_s.sub(/\Av/i, '')

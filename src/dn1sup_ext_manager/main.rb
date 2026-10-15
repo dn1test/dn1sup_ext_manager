@@ -20,7 +20,7 @@ module Dn1sup
 
   module ExtManager
     ID      = 'dn1sup_ext_manager'
-    VERSION = '0.17.0'
+    VERSION = '0.17.1'
     REPO    = 'dn1test/dn1sup_ext_manager'
     ASSET   = "#{ID}.rbz"
     # Папка разработки задана в самом расширении: корень этого репозитория
@@ -671,6 +671,7 @@ module Dn1sup
     # releases: опциональный Hash { repo => release_data } для объединения данных.
     # release_lists: опциональный Hash { repo => [release, ...] } для статусов.
     def collect_products_data(force = false, check_releases: false, releases: nil, release_lists: nil)
+      ensure_updater!
       entries = merged_entries
       return [] if entries.empty?
 
@@ -746,7 +747,7 @@ module Dn1sup
         # Статус относительно предлагаемого релиза: 'update' / 'switch' / 'current' / nil.
         # Для переизданных релизов без бампа версии — дата установки текущей сборки.
         installed_at = Dn1sup::Updater.installed_at(id) if is_installed
-        status = Dn1sup::Updater.product_status(installed_ver, offered, rel_list, installed_at: installed_at)
+        status = safe_product_status(installed_ver, offered, rel_list, installed_at)
         has_update = (status == 'update')
 
         # Лог правок (коммиты) между установленной и предлагаемой версиями —
@@ -816,6 +817,92 @@ module Dn1sup
       ''
     end
 
+    # ---- Совместимость копий апдейтера --------------------------------------
+    #
+    # Файл dn1sup_updater.rb лежит в КАЖДОМ расширении DN1Sup, а в память
+    # SketchUp загружается один общий модуль (кто встал последним — того
+    # и методы). После обновления менеджера в Plugins соседствуют копии
+    # разных версий: вызов нового кода (kwargs) против старого метода ронял
+    # установку с "wrong number of arguments (given 4, expected 3)".
+    # ensure_updater! догружает bundled-копию менеджера, если она новее
+    # загруженной; safe_*-обёртки деградируют к старому поведению, если
+    # догрузка невозможна.
+
+    # Версия bundled-копии апдейтера (рядом с main.rb). 0 = копия без
+    # константы UPDATER_VERSION (старая).
+    def bundled_updater_version
+      return @bundled_updater_version if defined?(@bundled_updater_version) && !@bundled_updater_version.nil?
+
+      @bundled_updater_version = begin
+        src = File.read(File.join(PLUGIN_DIR, 'dn1sup_updater.rb'))
+        m = src.match(/UPDATER_VERSION\s*=\s*(\d+)/)
+        m ? m[1].to_i : 0
+      rescue StandardError
+        0
+      end
+    end
+
+    # Догружает bundled-копию апдейтера, если загруженный модуль старше.
+    # Вызывать после загрузки всех расширений (perform_install,
+    # perform_check_update, collect_products_data), а не при старте.
+    def ensure_updater!
+      have = defined?(Dn1sup::Updater::UPDATER_VERSION) ? Dn1sup::Updater::UPDATER_VERSION.to_i : 0
+      need = bundled_updater_version
+      return if have >= need || need <= 0
+
+      path = File.join(PLUGIN_DIR, 'dn1sup_updater.rb')
+      return unless File.file?(path)
+
+      load path
+      store_log("апдейтер в памяти обновлён: v#{have} -> v#{need}")
+    rescue StandardError, ScriptError => e
+      Dn1sup::Updater.log_error(e)
+    end
+
+    # pick_freshest с фолбэком на старый 3-аргументный метод (без дат).
+    def safe_pick_freshest(installed_ver, local_ver, github_ver, installed_at: nil, github_time: nil, local_time: nil)
+      ensure_updater!
+      Dn1sup::Updater.pick_freshest(installed_ver, local_ver, github_ver,
+                                    installed_at: installed_at,
+                                    github_time: github_time,
+                                    local_time: local_time)
+    rescue ArgumentError => e
+      raise unless e.message =~ /wrong number of arguments|unknown keyword/
+
+      Dn1sup::Updater.pick_freshest(installed_ver, local_ver, github_ver)
+    end
+
+    # product_status с фолбэком на старый 3-аргументный метод (без даты).
+    def safe_product_status(installed_ver, offered, list, installed_at)
+      ensure_updater!
+      Dn1sup::Updater.product_status(installed_ver, offered, list, installed_at: installed_at)
+    rescue ArgumentError => e
+      raise unless e.message =~ /wrong number of arguments|unknown keyword/
+
+      Dn1sup::Updater.product_status(installed_ver, offered, list)
+    end
+
+    # install_from_url с фолбэком на метод без kwargs id:.
+    def safe_install_from_url(url, what, silent, id)
+      ensure_updater!
+      Dn1sup::Updater.install_from_url(url, what, silent, id: id)
+    rescue ArgumentError => e
+      raise unless e.message =~ /wrong number of arguments|unknown keyword/
+
+      Dn1sup::Updater.install_from_url(url, what, silent)
+    end
+
+    # local_dev_mtime есть только в новых копиях апдейтера.
+    def safe_local_mtime(dev_dir, id)
+      return nil if dev_dir.to_s.empty?
+      return nil unless Dn1sup::Updater.respond_to?(:local_dev_mtime)
+
+      Dn1sup::Updater.local_dev_mtime(dev_dir, id)
+    rescue StandardError => e
+      Dn1sup::Updater.log_error(e)
+      nil
+    end
+
     # ---- Установка / Обновление / Удаление --------------------------------
 
     # Проверка обновления карточки (кнопка «круг со стрелками»): версия
@@ -824,6 +911,7 @@ module Dn1sup
     # дате/времени (mtime файлов папки / published_at релиза против даты
     # установки). Папки нет — только GitHub.
     def perform_check_update(id)
+      ensure_updater!
       entry = find_entry(id)
       unless entry
         store_log("проверка '#{id}': расширение не найдено в реестре")
@@ -842,7 +930,7 @@ module Dn1sup
       installed_ver = installed_version(entry)
       dev_dir = dev_dir_for(entry)
       local_ver = dev_dir ? Dn1sup::Updater.local_dev_version(dev_dir, id) : ''
-      local_time = dev_dir ? Dn1sup::Updater.local_dev_mtime(dev_dir, id) : nil
+      local_time = dev_dir ? safe_local_mtime(dev_dir, id) : nil
       release = offered_release(repo, true)
       github_ver = release.is_a?(Hash) && release.key?('tag_name') ? release['tag_name'].to_s.sub(/\Av/i, '') : ''
       github_time = release.is_a?(Hash) ? Dn1sup::Updater.release_time(release) : nil
@@ -854,10 +942,10 @@ module Dn1sup
                  'error' => "#{name}: не удалось проверить обновления — нет ни локальной папки, ни релизов на GitHub." }
       end
 
-      pick = Dn1sup::Updater.pick_freshest(installed_ver, local_ver, github_ver,
-                                           installed_at: installed_at,
-                                           github_time: github_time,
-                                           local_time: local_time)
+      pick = safe_pick_freshest(installed_ver, local_ver, github_ver,
+                                installed_at: installed_at,
+                                github_time: github_time,
+                                local_time: local_time)
       if pick == :current
         detail = []
         detail << "локально #{local_ver}" unless local_ver.empty?
@@ -874,11 +962,12 @@ module Dn1sup
       res
     rescue StandardError => e
       Dn1sup::Updater.log_error(e)
-      { 'ok' => false, 'error' => "Исключение при проверке: #{e.message}" }
+      { 'ok' => false, 'error' => "Исключение при проверке: #{e.message} (подробности — в dn1sup_updater.log)" }
     end
 
     # Установка расширения по ID (в том числе найденного на GitHub)
     def perform_install(id)
+      ensure_updater!
       entry = find_entry(id)
       unless entry
         store_log("установка '#{id}': расширение не найдено в реестре")
@@ -898,7 +987,7 @@ module Dn1sup
       installed_ver = installed_version(entry)
       dev_dir = dev_dir_for(entry)
       local_ver = (dev_dir && !dev_dir.empty?) ? Dn1sup::Updater.local_dev_version(dev_dir, id) : ''
-      local_time = (dev_dir && !dev_dir.empty?) ? Dn1sup::Updater.local_dev_mtime(dev_dir, id) : nil
+      local_time = (dev_dir && !dev_dir.empty?) ? safe_local_mtime(dev_dir, id) : nil
       github_ver = release.is_a?(Hash) && release.key?('tag_name') ? release['tag_name'].to_s.sub(/\Av/i, '') : ''
       github_time = release.is_a?(Hash) ? Dn1sup::Updater.release_time(release) : nil
       installed_at = Dn1sup::Updater.installed_at(id)
@@ -907,10 +996,10 @@ module Dn1sup
       # (.rbz собирается на лету). Свежесть — по номеру версии, а при равном
       # номере — по дате/времени (mtime файлов vs дата установки).
       # Папки нет — только GitHub-путь ниже.
-      if Dn1sup::Updater.pick_freshest(installed_ver, local_ver, github_ver,
-                                       installed_at: installed_at,
-                                       github_time: github_time,
-                                       local_time: local_time) == :local
+      if safe_pick_freshest(installed_ver, local_ver, github_ver,
+                              installed_at: installed_at,
+                              github_time: github_time,
+                              local_time: local_time) == :local
         ok = Dn1sup::Updater.install_from_local_dir(dev_dir, id, name)
         if ok
           installed_ver = local_ver
@@ -941,7 +1030,7 @@ module Dn1sup
         }
       end
 
-      ok = Dn1sup::Updater.install_from_url(url, "#{name} (#{release['tag_name']})", true, id: id)
+      ok = safe_install_from_url(url, "#{name} (#{release['tag_name']})", true, id)
       if ok
         # Сохраняем актуальную версию из релиза репозитория
         installed_ver = release['tag_name'].to_s.sub(/\Av/i, '')
@@ -956,7 +1045,7 @@ module Dn1sup
       end
     rescue StandardError => e
       Dn1sup::Updater.log_error(e)
-      { 'ok' => false, 'error' => "Исключение при установке: #{e.message}" }
+      { 'ok' => false, 'error' => "Исключение при установке: #{e.message} (подробности — в dn1sup_updater.log)" }
     end
 
     # Обновление расширения
