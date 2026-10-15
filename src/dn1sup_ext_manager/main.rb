@@ -45,6 +45,10 @@ module Dn1sup
     # req/час без токена), иначе каждое нажатие «Обновить» съедало ~9 запросов
     # только на meta и упиралось в 403.
     REPO_CHECK_TTL = 10 * 60
+    # Параллельный опрос репозиториев при проверке обновлений: сетевые
+    # запросы IO-bound, GVL на сокетах отпускается — N воркеров дают
+    # ускорение примерно в N раз вместо последовательного обхода.
+    FETCH_CONCURRENCY = 6
     CACHE_MUTEX = Mutex.new
 
     PLUGIN_DIR   = File.dirname(__FILE__).freeze
@@ -1516,6 +1520,40 @@ module Dn1sup
       Dn1sup::Updater.log_error(e)
     end
 
+    # Параллельный обход списка: элементы раздаются воркерам через Queue,
+    # каждый воркер выполняет только сеть/чистые вычисления (без SketchUp API).
+    # Ошибки воркеров логируются и не роняют весь обход. Пустой список — noop.
+    def parallel_each(list, max: FETCH_CONCURRENCY, &block)
+      items = Array(list)
+      return if items.empty?
+      return items.each { |it| block.call(it) } if items.size < 2
+
+      workers_n = [[max.to_i, 1].max, items.size].min
+      queue = Queue.new
+      items.each { |it| queue << it }
+      workers = workers_n.times.map do
+        Thread.new do
+          loop do
+            item = begin
+              queue.pop(true)
+            rescue ThreadError
+              break
+            end
+            begin
+              block.call(item)
+            rescue StandardError, ScriptError => e
+              Dn1sup::Updater.log_error(e)
+            end
+          end
+        end
+      end
+      workers.each(&:join)
+      nil
+    rescue StandardError, ScriptError => e
+      Dn1sup::Updater.log_error(e)
+      nil
+    end
+
     # Фоновая загрузка каталога с GitHub, списков релизов, автопоиска
     # новых расширений и перерисовка каталога. Каталог обновляется даже
     # для неустановленных расширений: центральный registry.json — основа,
@@ -1608,9 +1646,9 @@ module Dn1sup
           result['all_repos'] = all_repos
           done_count = 0
           bump = lambda do
-            done_count += 1
             begin
               CACHE_MUTEX.synchronize do
+                done_count += 1
                 @sync_status['fetched'] = done_count
                 @sync_status['total'] = all_repos.size
               end
@@ -1618,7 +1656,11 @@ module Dn1sup
               nil
             end
           end
-          all_repos.each do |repo|
+          # Параллельный опрос: каждый репозиторий — независимый набор
+          # сетевых запросов (meta/релизы/registry/CHANGELOG). Число запросов
+          # то же, что в последовательном обходе, — лимиты GitHub не растут,
+          # а время стремится к самому медленному репозиторию, а не к сумме.
+          parallel_each(all_repos) do |repo|
             repo_str = repo.to_s
             if repo_str.empty?
               bump.call
@@ -1632,7 +1674,7 @@ module Dn1sup
             meta_due = force ? (!info.is_a?(Hash) || (now - info['checked_at'].to_i) >= REPO_CHECK_TTL) : (!info.is_a?(Hash) || (now - info['checked_at'].to_i) >= DISCOVERY_INTERVAL)
             if meta_due
               meta = Dn1sup::Updater.repo_meta(repo_str)
-              result['stale'][repo_str] = meta
+              CACHE_MUTEX.synchronize { result['stale'][repo_str] = meta }
             end
             dead = meta.is_a?(Hash) ? (meta[:exists] == false || meta[:renamed]) : stale?(repo_str)
             # Мёртвый/перемещённый репозиторий на релизы не опрашиваем:
@@ -1640,7 +1682,7 @@ module Dn1sup
             # под старым именем. Репозиторий считается обработанным: счётчик
             # fetched растёт, иначе UI навсегда висел на 0/9.
             if dead
-              result['dead'] << repo_str
+              CACHE_MUTEX.synchronize { result['dead'] << repo_str }
               bump.call
               next
             end
@@ -1654,7 +1696,7 @@ module Dn1sup
               if registry_meta_due?(guess_id, force, now)
                 per = Dn1sup::Updater.registry_entry(repo_str, guess_id)
                 if per.is_a?(Hash) && !per['id'].to_s.empty?
-                  result['registry_meta'][per['id'].to_s] = per
+                  CACHE_MUTEX.synchronize { result['registry_meta'][per['id'].to_s] = per }
                 end
               end
             rescue StandardError => e
@@ -1665,9 +1707,9 @@ module Dn1sup
             if list.empty?
               # Пустой список — это неуспех (сеть/лимиты), а не «релизов нет»:
               # фиксируем для сводки, успешный кэш при этом не затёрт.
-              result['failed'] << repo_str
+              CACHE_MUTEX.synchronize { result['failed'] << repo_str }
             else
-              result['releases'][repo_str] = list
+              CACHE_MUTEX.synchronize { result['releases'][repo_str] = list }
             end
 
             # Резерв «Что нового»: CHANGELOG.md из ветки main — раз за сессию
@@ -1677,7 +1719,7 @@ module Dn1sup
               md = Dn1sup::Updater.fetch_text(
                 "https://raw.githubusercontent.com/#{repo_str}/main/CHANGELOG.md"
               )
-              result['changelogs'][repo_str] = md unless md.nil?
+              CACHE_MUTEX.synchronize { result['changelogs'][repo_str] = md } unless md.nil?
             end
             bump.call
           end
@@ -1686,15 +1728,21 @@ module Dn1sup
           # перезапуск ломал сводку (показывал итоги подмножества, напр. 1/1
           # вместо 3/3). Мёртвые (gone/renamed) не повторяем.
           if attempts_left > 0 && result['failed'].any?
-            retry_list = result['failed'].dup
-            result['failed'].clear
-            retry_list.each do |retry_repo|
-              next if retry_repo.to_s.empty? || result['dead'].include?(retry_repo)
+            retry_list = nil
+            CACHE_MUTEX.synchronize do
+              retry_list = result['failed'].dup
+              result['failed'].clear
+            end
+            dead_snapshot = result['dead'].dup
+            parallel_each(retry_list) do |retry_repo|
+              next if retry_repo.to_s.empty? || dead_snapshot.include?(retry_repo)
               retry_list_rel = releases_list(retry_repo, force)
-              if retry_list_rel.empty?
-                result['failed'] << retry_repo
-              else
-                result['releases'][retry_repo] = retry_list_rel
+              CACHE_MUTEX.synchronize do
+                if retry_list_rel.empty?
+                  result['failed'] << retry_repo
+                else
+                  result['releases'][retry_repo] = retry_list_rel
+                end
               end
             end
           end
@@ -1879,14 +1927,20 @@ module Dn1sup
       Dn1sup::Updater.defer_async(
         lambda do
           result = {}
-          pending.each do |item|
+          # Теги фиксируем заранее: full_tag_name читает @releases_cache,
+          # параллельным воркерам отдаём готовые строки (без общего состояния).
+          tagged = pending.map do |item|
+            item.merge('base_tag' => full_tag_name(item['repo'], item['installed']),
+                       'head_tag' => full_tag_name(item['repo'], item['offered']))
+          end
+          parallel_each(tagged) do |item|
             msgs = Dn1sup::Updater.compare_commits(
               item['repo'],
-              full_tag_name(item['repo'], item['installed']),
-              full_tag_name(item['repo'], item['offered']),
+              item['base_tag'],
+              item['head_tag'],
               limit: 15
             )
-            result[item['repo']] = item.merge('messages' => msgs) unless msgs.empty?
+            CACHE_MUTEX.synchronize { result[item['repo']] = item.merge('messages' => msgs) } unless msgs.empty?
           end
           result
         end,
@@ -2185,7 +2239,10 @@ module Dn1sup
       Dn1sup::Updater.defer_async(
         lambda do
           found = []
-          repos.each do |repo|
+          # Снапшот записей — воркеры не ходят в merged_entries параллельно.
+          entries_by_repo = {}
+          merged_entries.each { |e| entries_by_repo[e['repo'].to_s] ||= e }
+          parallel_each(repos) do |repo|
             list = begin
               releases_list(repo, false)
             rescue StandardError => e
@@ -2197,7 +2254,7 @@ module Dn1sup
             offered = Dn1sup::Updater.choose_release(list)
             next unless offered
 
-            entry = merged_entries.find { |e| e['repo'].to_s == repo }
+            entry = entries_by_repo[repo.to_s]
             next unless entry
 
             inst = installed_version(entry)
@@ -2208,7 +2265,10 @@ module Dn1sup
             rescue StandardError
               nil
             end
-            found << (entry['name'].to_s.empty? ? entry['id'].to_s : entry['name'].to_s) if status == 'update' || status == 'switch'
+            if status == 'update' || status == 'switch'
+              label = entry['name'].to_s.empty? ? entry['id'].to_s : entry['name'].to_s
+              CACHE_MUTEX.synchronize { found << label }
+            end
           end
           found
         end,
