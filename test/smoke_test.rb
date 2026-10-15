@@ -534,23 +534,40 @@ ensure
 end
 
 begin
-  # --- снапшот v4: статусы репозиториев переживают перезапуск -------------
+  # --- снапшот v5: статусы репозиториев и каталог переживают перезапуск ----
   Dn1sup::ExtManager.instance_variable_set(
     :@stale_repos,
     { 'dn1test/dn1sup_dummy_found' => { 'status' => 'gone', 'renamed_to' => '', 'checked_at' => 1_700_000_000 } }
   )
+  Dn1sup::ExtManager.instance_variable_set(
+    :@remote_registry,
+    [{ 'id' => 'dn1sup_dummy_remote', 'name' => 'Remote', 'description' => 'свежее с GitHub',
+       'repo' => 'dn1test/dn1sup_dummy_remote', 'version' => '1.2.0' }]
+  )
+  Dn1sup::ExtManager.instance_variable_set(
+    :@registry_meta_cache,
+    { 'dn1sup_save_settings' => { 'data' => { 'id' => 'dn1sup_save_settings', 'repo' => 'dn1test/dn1sup_save_settings',
+                                              'description' => 'свежее описание из репозитория' }, 'at' => 1_700_000_001 } }
+  )
   Dn1sup::ExtManager.save_release_snapshot
   data = JSON.parse(File.read(Dn1sup::ExtManager.snapshot_path))
-  assert 'снапшот v4: версия и поле stale',
-         data['version'] == 4 && data['stale'].is_a?(Hash) &&
-         data['stale']['dn1test/dn1sup_dummy_found']['status'] == 'gone', "version=#{data['version']}"
+  assert 'снапшот v5: версия, stale и каталог',
+         data['version'] == 5 && data['stale'].is_a?(Hash) &&
+         data['stale']['dn1test/dn1sup_dummy_found']['status'] == 'gone' &&
+         data['remote_registry'].is_a?(Array) && data['registry_meta'].is_a?(Hash), "version=#{data['version']}"
 
   Dn1sup::ExtManager.instance_variable_set(:@stale_repos, {})
   Dn1sup::ExtManager.instance_variable_set(:@release_cache, {})
   Dn1sup::ExtManager.instance_variable_set(:@releases_cache, {})
+  Dn1sup::ExtManager.instance_variable_set(:@remote_registry, [])
+  Dn1sup::ExtManager.instance_variable_set(:@registry_meta_cache, {})
   Dn1sup::ExtManager.load_release_snapshot
-  assert 'снапшот v4: stale восстановлен',
+  assert 'снапшот v5: stale восстановлен',
          Dn1sup::ExtManager.instance_variable_get(:@stale_repos)['dn1test/dn1sup_dummy_found']['status'] == 'gone'
+  assert 'снапшот v5: remote_registry восстановлен',
+         Dn1sup::ExtManager.instance_variable_get(:@remote_registry).any? { |e| e['id'] == 'dn1sup_dummy_remote' }
+  assert 'снапшот v5: registry_meta восстановлен',
+         Dn1sup::ExtManager.instance_variable_get(:@registry_meta_cache)['dn1sup_save_settings']['data']['description'] == 'свежее описание из репозитория'
 
   # Самовосстановление: discovered-запись мёртвого репозитория из снапшота
   # (например, записанная версией без stale-логики) не resurrect-ится.
@@ -583,6 +600,21 @@ begin
   assert 'снапшот: перезаписывается чистыми данными', clean['discovered'].size == 1
   data['discovered'] = []
 
+  # Старый формат v4 (без каталога) читается, каталог остаётся пустым
+  data.delete('remote_registry')
+  data.delete('registry_meta')
+  data['version'] = 4
+  File.write(Dn1sup::ExtManager.snapshot_path, JSON.generate(data))
+  Dn1sup::ExtManager.instance_variable_set(:@stale_repos, {})
+  Dn1sup::ExtManager.instance_variable_set(:@release_cache, {})
+  Dn1sup::ExtManager.instance_variable_set(:@releases_cache, {})
+  Dn1sup::ExtManager.instance_variable_set(:@remote_registry, [])
+  Dn1sup::ExtManager.instance_variable_set(:@registry_meta_cache, {})
+  Dn1sup::ExtManager.load_release_snapshot
+  assert 'снапшот v4 без каталога читается',
+         Dn1sup::ExtManager.instance_variable_get(:@remote_registry).is_a?(Array) &&
+         Dn1sup::ExtManager.instance_variable_get(:@registry_meta_cache).is_a?(Hash)
+
   # Старый формат v3 (без stale) читается, stale остаётся пустым
   data.delete('stale')
   data['version'] = 3
@@ -600,6 +632,70 @@ ensure
   Dn1sup::ExtManager.instance_variable_set(:@releases_cache, {})
   Dn1sup::ExtManager.instance_variable_set(:@discovered_entries, [])
   Dn1sup::ExtManager.instance_variable_set(:@commits_cache, {})
+  Dn1sup::ExtManager.instance_variable_set(:@remote_registry, [])
+  Dn1sup::ExtManager.instance_variable_set(:@registry_meta_cache, {})
+  Dn1sup::ExtManager.instance_variable_set(:@remote_registry_at, 0)
+end
+
+# 13d. Каталог обновляется с GitHub и для неустановленных расширений:
+# центральный реестр — основа, per-repo — дополнения поверх (офлайн).
+begin
+  Dn1sup::ExtManager.instance_variable_set(:@remote_registry, [])
+  Dn1sup::ExtManager.instance_variable_set(:@registry_meta_cache, {})
+  Dn1sup::ExtManager.instance_variable_set(:@discovered_entries, [])
+  Dn1sup::ExtManager.instance_variable_set(:@releases_cache, {})
+  Dn1sup::ExtManager.instance_variable_set(:@release_cache, {})
+
+  # Центральный remote добавляет новое расширение и обновляет описание.
+  Dn1sup::ExtManager.apply_registry_refresh(
+    [
+      { 'id' => 'dn1sup_new_from_github', 'name' => 'New From GitHub',
+        'description' => 'новое расширение из центрального реестра', 'repo' => 'dn1test/dn1sup_new_from_github' },
+      { 'id' => 'dn1sup_save_settings', 'repo' => 'dn1test/dn1sup_save_settings',
+        'description' => 'обновлённое центральное описание' }
+    ],
+    {}
+  )
+  merged = Dn1sup::ExtManager.merged_entries
+  assert 'каталог: центральный remote добавляет запись',
+         merged.any? { |e| e['id'] == 'dn1sup_new_from_github' }
+  ss = merged.find { |e| e['id'] == 'dn1sup_save_settings' }
+  assert 'каталог: центральный remote обновляет описание неустановленного',
+         ss && ss['description'] == 'обновлённое центральное описание'
+
+  # Per-repo дополнение точечно обновляет поверх центрального.
+  Dn1sup::ExtManager.apply_registry_refresh(
+    nil,
+    { 'dn1sup_save_settings' => { 'id' => 'dn1sup_save_settings', 'repo' => 'dn1test/dn1sup_save_settings',
+                                  'description' => 'свежее описание из репозитория расширения' } }
+  )
+  ss2 = Dn1sup::ExtManager.merged_entries.find { |e| e['id'] == 'dn1sup_save_settings' }
+  assert 'каталог: per-repo дополняет центральный',
+         ss2 && ss2['description'] == 'свежее описание из репозитория расширения'
+
+  # Пустые поля per-repo bundled/центральные данные не затирают.
+  Dn1sup::ExtManager.apply_registry_refresh(
+    nil,
+    { 'dn1sup_save_settings' => { 'id' => 'dn1sup_save_settings', 'repo' => 'dn1test/dn1sup_save_settings',
+                                  'description' => '', 'name' => '' } }
+  )
+  ss3 = Dn1sup::ExtManager.merged_entries.find { |e| e['id'] == 'dn1sup_save_settings' }
+  assert 'каталог: пустые per-repo поля не затирают данные',
+         ss3 && ss3['description'] == 'свежее описание из репозитория расширения' && !ss3['name'].to_s.empty?
+
+  # Карточка неустановленного строится из свежих данных каталога.
+  card = Dn1sup::ExtManager.collect_products_data(false, check_releases: false)
+                             .find { |p| p['id'] == 'dn1sup_save_settings' }
+  assert 'карточка неустановленного со свежими данными',
+         !!card && card['is_installed'] == false &&
+         card['description'] == 'свежее описание из репозитория расширения', card&.slice('description', 'is_installed').inspect
+ensure
+  Dn1sup::ExtManager.instance_variable_set(:@remote_registry, [])
+  Dn1sup::ExtManager.instance_variable_set(:@registry_meta_cache, {})
+  Dn1sup::ExtManager.instance_variable_set(:@remote_registry_at, 0)
+  Dn1sup::ExtManager.instance_variable_set(:@discovered_entries, [])
+  Dn1sup::ExtManager.instance_variable_set(:@release_cache, {})
+  Dn1sup::ExtManager.instance_variable_set(:@releases_cache, {})
 end
 
 # 14. Уровни логирования: краткий прикладной лог + [DEBUG] только при флаге debug

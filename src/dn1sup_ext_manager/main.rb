@@ -20,7 +20,7 @@ module Dn1sup
 
   module ExtManager
     ID      = 'dn1sup_ext_manager'
-    VERSION = '0.20.0'
+    VERSION = '0.21.0'
     REPO    = 'dn1test/dn1sup_ext_manager'
     ASSET   = "#{ID}.rbz"
     # Папка разработки задана в самом расширении: корень этого репозитория
@@ -53,13 +53,23 @@ module Dn1sup
     TOOLBAR_NAME = 'DN1Sup Extension Store'
     CMD_TOOLTIP  = 'DN1Sup Extension Store — каталог, установка и обновление расширений'
     # Актуальная версия формата снапшота релизов (см. save/load_release_snapshot).
-    SNAPSHOT_VERSION = 4
+    SNAPSHOT_VERSION = 5
 
     @dialog = nil
     @release_cache = {}   # repo => предлагаемый (новейший стабильный) релиз
     @releases_cache = {}  # repo => [релизы] — полный список для статусов
     @discovered_entries = [] # найденные на GitHub расширения вне registry.json
     @commits_cache = {}   # repo => {'installed'=>..,'offered'=>..,'messages'=>[...]}
+    # Центральный registry.json с GitHub (REGISTRY_URL, ветка main):
+    # основа каталога поверх bundled-копии. Обновляется фоново, работает
+    # и для неустановленных расширений.
+    @remote_registry = []
+    @remote_registry_at = 0
+    # Per-repo дополнения из registry.json каждого расширения
+    # (raw.githubusercontent.com/<repo>/main/registry.json):
+    # id => {'data' => {...}, 'at' => unixtime}. Непустые поля дополняют
+    # и обновляют центральную запись.
+    @registry_meta_cache = {}
     # Верхняя секция CHANGELOG.md из ветки main репозитория (repo => текст):
     # резервный источник «Что нового», когда у релиза пустое тело.
     @changelog_md_cache = {}
@@ -124,6 +134,170 @@ module Dn1sup
       []
     end
 
+    # ---- Обновление каталога с GitHub (для всех, не только установленных) --
+
+    # Разбор сырого текста registry.json в список записей (Array/Hash.extensions).
+    def parse_registry_list(raw)
+      text = raw.to_s.sub(/\A\xEF\xBB\xBF/, '')
+      return [] if text.strip.empty?
+
+      list = JSON.parse(text)
+      list = list['extensions'] if list.is_a?(Hash) && list['extensions'].is_a?(Array)
+      list.is_a?(Array) ? list.find_all { |e| e.is_a?(Hash) && !e['id'].to_s.empty? } : []
+    rescue StandardError, ScriptError => e
+      Dn1sup::Updater.log_error(e)
+      []
+    end
+
+    # Пора ли тянуть центральный реестр: принудительно по кнопке либо
+    # не чаще раза в сутки (pref last_remote_registry).
+    def remote_registry_due?(force)
+      return true if force
+      return (@remote_registry_at.to_i <= 0 || @remote_registry.empty?) unless defined?(Sketchup)
+
+      last = Sketchup.read_default('DN1Sup ExtManager', 'last_remote_registry', 0)
+      (Time.now.to_i - last.to_i) >= DISCOVERY_INTERVAL
+    rescue StandardError
+      @remote_registry.empty?
+    end
+
+    def mark_remote_registry
+      @remote_registry_at = Time.now.to_i
+      return unless defined?(Sketchup)
+
+      Sketchup.write_default('DN1Sup ExtManager', 'last_remote_registry', @remote_registry_at)
+    rescue StandardError
+      nil
+    end
+
+    # Чистая сетевая загрузка центрального реестра (вызывается в фоне).
+    # Возвращает Array записей или nil (неудача — прежние данные сохраняются).
+    def fetch_remote_registry_list
+      raw = Dn1sup::Updater.fetch_text(REGISTRY_URL)
+      return nil if raw.to_s.strip.empty?
+
+      parse_registry_list(raw)
+    rescue StandardError => e
+      Dn1sup::Updater.log_error(e)
+      nil
+    end
+
+    # Пора ли обновлять per-repo метаданные записи.
+    def registry_meta_due?(id, force, now = nil)
+      return true if force
+
+      now ||= Time.now.to_i
+      hit = @registry_meta_cache[id.to_s]
+      return true unless hit.is_a?(Hash) && hit['at'].to_i > 0
+
+      (now - hit['at'].to_i) >= REPO_CHECK_TTL
+    rescue StandardError
+      true
+    end
+
+    # Наложение свежих полей поверх базовой записи. Пустые значения
+    # ничего не затирают; id не меняется.
+    OVERLAY_FIELDS = %w[name description author repo asset version changelog].freeze
+
+    def overlay_entry(base, overlay)
+      return base unless base.is_a?(Hash) && overlay.is_a?(Hash)
+
+      merged = base.dup
+      OVERLAY_FIELDS.each do |k|
+        v = overlay[k]
+        merged[k] = v if !v.nil? && !v.to_s.strip.empty?
+      end
+      merged
+    end
+
+    # Эффективный реестр: bundled-основа + центральный remote с GitHub +
+    # per-repo дополнения из репозиториев расширений. Порядок важен:
+    # центральный — основа, per-repo — точечные обновления поверх.
+    def effective_registry_entries
+      entries = load_registry
+      index_by_id = {}
+      index_by_repo = {}
+      entries.each do |e|
+        next unless e.is_a?(Hash)
+
+        index_by_id[e['id'].to_s] = e unless e['id'].to_s.empty?
+        index_by_repo[e['repo'].to_s] = e unless e['repo'].to_s.empty?
+      end
+      Array(@remote_registry).each do |r|
+        next unless r.is_a?(Hash) && !r['id'].to_s.empty?
+
+        hit = index_by_id[r['id'].to_s] || index_by_repo[r['repo'].to_s]
+        if hit
+          OVERLAY_FIELDS.each do |k|
+            v = r[k]
+            hit[k] = v if !v.nil? && !v.to_s.strip.empty?
+          end
+        else
+          dup = r.dup
+          entries << dup
+          index_by_id[dup['id'].to_s] = dup
+          index_by_repo[dup['repo'].to_s] = dup unless dup['repo'].to_s.empty?
+        end
+      end
+      @registry_meta_cache.each_value do |hit|
+        meta = hit.is_a?(Hash) ? hit['data'] : nil
+        next unless meta.is_a?(Hash) && !meta['id'].to_s.empty?
+
+        target = index_by_id[meta['id'].to_s] || index_by_repo[meta['repo'].to_s]
+        if target
+          OVERLAY_FIELDS.each do |k|
+            v = meta[k]
+            target[k] = v if !v.nil? && !v.to_s.strip.empty?
+          end
+        else
+          dup = meta.dup
+          entries << dup
+          index_by_id[dup['id'].to_s] = dup
+          index_by_repo[dup['repo'].to_s] = dup unless dup['repo'].to_s.empty?
+        end
+      end
+      entries
+    rescue StandardError => e
+      Dn1sup::Updater.log_error(e)
+      load_registry
+    end
+
+    # Применяет результаты фоновой загрузки каталога (главный поток).
+    # remote_list: Array (успех) / nil (не запрашивалось или неудача).
+    # meta_map: { id => Hash записи из репозитория расширения }.
+    def apply_registry_refresh(remote_list, meta_map)
+      now = Time.now.to_i
+      if remote_list.is_a?(Array)
+        CACHE_MUTEX.synchronize do
+          @remote_registry = remote_list.map { |e| e.is_a?(Hash) ? e.dup : e }
+          @remote_registry_at = now
+        end
+        mark_remote_registry
+        store_debug("реестр: центральный обновлён (#{remote_list.size} записей)")
+      end
+      if meta_map.is_a?(Hash) && !meta_map.empty?
+        CACHE_MUTEX.synchronize do
+          meta_map.each do |id, meta|
+            next unless meta.is_a?(Hash) && !id.to_s.empty?
+
+            prev = @registry_meta_cache[id.to_s]
+            prev_data = prev.is_a?(Hash) && prev['data'].is_a?(Hash) ? prev['data'].dup : {}
+            merged = prev_data
+            merged['id'] = meta['id'].to_s unless meta['id'].to_s.empty?
+            merged['id'] = id.to_s if merged['id'].to_s.empty?
+            OVERLAY_FIELDS.each do |k|
+              v = meta[k]
+              merged[k] = v if !v.nil? && !v.to_s.strip.empty?
+            end
+            @registry_meta_cache[id.to_s] = { 'data' => merged, 'at' => now }
+          end
+        end
+        store_debug("реестр: per-repo дополнения (#{meta_map.size})")
+      end
+    rescue StandardError => e
+      Dn1sup::Updater.log_error(e)
+    end
+
     # ---- Автопоиск расширений на GitHub ------------------------------------
 
     # Скрытые пользователем найденные репозитории (pref, CSV).
@@ -173,12 +347,13 @@ module Dn1sup
       end
     end
 
-    # Полный список записей каталога: явный registry.json + найденные на
+    # Полный список записей каталога: эффективный реестр (bundled +
+    # центральный с GitHub + per-repo дополнения) + найденные на
     # GitHub расширения, которых в реестре нет. Реестр первичен: найденное
     # дополняет, но не заменяет. Скрытые репозитории отфильтровываются,
     # записи уникализируются (в т.ч. внутри самого списка найденного).
     def merged_entries
-      entries = load_registry
+      entries = effective_registry_entries
       known = {}
       entries.each do |e|
         known[e['id'].to_s] = true
@@ -258,6 +433,7 @@ module Dn1sup
       @release_cache.delete(repo_str)
       @releases_cache.delete(repo_str)
       @commits_cache.delete(repo_str)
+      @registry_meta_cache.delete_if { |_id, hit| hit.is_a?(Hash) && hit['data'].is_a?(Hash) && hit['data']['repo'].to_s == repo_str }
       @discovered_entries.reject! { |e| e.is_a?(Hash) && e['repo'].to_s == repo_str }
       status != prev
     rescue StandardError => e
@@ -297,7 +473,7 @@ module Dn1sup
     # самого репозитория, фолбэк — описание репозитория с GitHub.
     def discover_repos
       registry_ids = {}
-      load_registry.each do |e|
+      effective_registry_entries.each do |e|
         registry_ids[e['id'].to_s] = true
         registry_ids[e['repo'].to_s] = true
       end
@@ -515,10 +691,13 @@ module Dn1sup
     end
 
     # Сохраняет компактный снапшот успешных списков релизов, найденных
-    # расширений, логов правок и статусов репозиториев. Формат v4:
-    # { "version" => 4, "releases" => { repo => [release, ...] },
+    # расширений, логов правок, статусов репозиториев и свежих данных
+    # каталога. Формат v5 (v4 + remote_registry/registry_meta):
+    # { "version" => 5, "releases" => { repo => [release, ...] },
     #   "discovered" => [entry, ...], "commits" => { repo => {...} },
-    #   "stale" => { repo => {'status'=>..,'renamed_to'=>..,'checked_at'=>..} } } —
+    #   "stale" => { repo => {...} },
+    #   "remote_registry" => [entry, ...],
+    #   "registry_meta" => { id => {'data'=>{...},'at'=>..} } } —
     # до 10 релизов на репозиторий (статусы и changelog берутся из них;
     # установка всегда делает свежий запрос).
     def save_release_snapshot
@@ -526,12 +705,14 @@ module Dn1sup
       return unless path
 
       data = {
-        'version'    => SNAPSHOT_VERSION,
-        'saved_at'   => Time.now.to_i,
-        'releases'   => {},
-        'discovered' => @discovered_entries,
-        'commits'    => @commits_cache,
-        'stale'      => @stale_repos
+        'version'         => SNAPSHOT_VERSION,
+        'saved_at'        => Time.now.to_i,
+        'releases'        => {},
+        'discovered'      => @discovered_entries,
+        'commits'         => @commits_cache,
+        'stale'           => @stale_repos,
+        'remote_registry' => @remote_registry,
+        'registry_meta'   => @registry_meta_cache
       }
       @releases_cache.each do |repo, list|
         next unless list.is_a?(Array) && !list.empty?
@@ -557,9 +738,9 @@ module Dn1sup
     end
 
     # Загружает снапшот в кэши (только если кэш пуст — не затирая свежие
-    # данные). Понимает формат v4 (v3 + статусы репозиториев) и старые:
-    # v3 (списки релизов + найденные + коммиты), v2 (списки релизов) и
-    # v1 (repo => релиз, заворачивается в список из одного элемента).
+    # данные). Понимает формат v5 (v4 + каталог с GitHub) и старые:
+    # v4 (списки релизов + найденные + коммиты + статусы), v3 (без stale),
+    # v2 (списки релизов) и v1 (repo => релиз).
     def load_release_snapshot
       path = snapshot_path
       return unless path && File.file?(path) && @release_cache.empty?
@@ -571,6 +752,21 @@ module Dn1sup
       # могут иметь другой смысл.
       return if data['version'].to_i > SNAPSHOT_VERSION
 
+      if data['remote_registry'].is_a?(Array) && @remote_registry.empty?
+        list = data['remote_registry'].find_all { |e| e.is_a?(Hash) && !e['id'].to_s.empty? }
+        @remote_registry = uniq_entries(list)
+        @remote_registry_at = data['saved_at'].to_i
+      end
+      if data['registry_meta'].is_a?(Hash) && @registry_meta_cache.empty?
+        data['registry_meta'].each do |id, hit|
+          next unless hit.is_a?(Hash) && hit['data'].is_a?(Hash) && !id.to_s.empty?
+
+            @registry_meta_cache[id.to_s] = {
+              'data' => hit['data'],
+              'at'   => hit['at'].to_i > 0 ? hit['at'].to_i : data['saved_at'].to_i
+            }
+        end
+      end
       if data['discovered'].is_a?(Array) && @discovered_entries.empty?
         # Самовосстановление: найденные записи мёртвых/перемещённых репозиториев
         # (снапшот старой версии или внешний мусор) не resurrect-им. Дубли
@@ -1320,10 +1516,12 @@ module Dn1sup
       Dn1sup::Updater.log_error(e)
     end
 
-    # Фоновая загрузка списков релизов, автопоиска новых расширений и
-    # перерисовка каталога. Однократный автоповтор, если сеть была
-    # недоступна в момент первого обхода. После релизов — фоновая догрузка
-    # логов правок (коммитов) для продуктов с обновлением.
+    # Фоновая загрузка каталога с GitHub, списков релизов, автопоиска
+    # новых расширений и перерисовка каталога. Каталог обновляется даже
+    # для неустановленных расширений: центральный registry.json — основа,
+    # per-repo registry.json — дополнения поверх. Однократный автоповтор,
+    # если сеть была недоступна в момент первого обхода. После релизов —
+    # фоновая догрузка логов правок (коммитов) для продуктов с обновлением.
     def fetch_and_render(dlg, repos, force, attempts_left: 0, first_scan: false, notify_summary: false)
       want_discovery = discovery_due?(force) || first_scan
       # Живой прогресс проверки: фон пишет fetched, главный поток раз в 0.5с
@@ -1373,21 +1571,54 @@ module Dn1sup
       end
       Dn1sup::Updater.defer_async(
         lambda do
-          result = { 'releases' => {}, 'discovered' => nil, 'stale' => {}, 'changelogs' => {}, 'failed' => [], 'dead' => [] }
+          result = { 'releases' => {}, 'discovered' => nil, 'stale' => {}, 'changelogs' => {}, 'failed' => [], 'dead' => [],
+                     'remote_registry' => nil, 'registry_meta' => {}, 'remote_failed' => false, 'all_repos' => Array(repos) }
           now = Time.now.to_i
+          # 1. Каталог: центральный реестр — основа, per-repo — дополнения.
+          # Работает и для неустановленных: список и описания обновляются
+          # без установки. Неудача сети прежние данные не затирает.
+          if remote_registry_due?(force)
+            fetched_remote = fetch_remote_registry_list
+            if fetched_remote.is_a?(Array)
+              result['remote_registry'] = fetched_remote
+            else
+              result['remote_failed'] = true
+            end
+          end
+          base_list = begin
+            load_registry
+          rescue StandardError
+            []
+          end
+          provisional = Array(base_list) + Array(result['remote_registry'])
+          id_by_repo = {}
+          provisional.each do |e|
+            next unless e.is_a?(Hash) && !e['repo'].to_s.empty? && !e['id'].to_s.empty?
+            next if id_by_repo.key?(e['repo'].to_s)
+
+            id_by_repo[e['repo'].to_s] = e['id'].to_s
+          end
+          Array(result['remote_registry']).each do |e|
+            next unless e.is_a?(Hash) && !e['repo'].to_s.empty?
+            next if id_by_repo.key?(e['repo'].to_s)
+
+            id_by_repo[e['repo'].to_s] = e['id'].to_s.empty? ? e['repo'].to_s.split('/').last.to_s : e['id'].to_s
+          end
+          all_repos = (Array(repos) + id_by_repo.keys).map(&:to_s).reject(&:empty?).uniq
+          result['all_repos'] = all_repos
           done_count = 0
           bump = lambda do
             done_count += 1
             begin
               CACHE_MUTEX.synchronize do
                 @sync_status['fetched'] = done_count
-                @sync_status['total'] = repos.size
+                @sync_status['total'] = all_repos.size
               end
             rescue StandardError
               nil
             end
           end
-          repos.each do |repo|
+          all_repos.each do |repo|
             repo_str = repo.to_s
             if repo_str.empty?
               bump.call
@@ -1412,6 +1643,22 @@ module Dn1sup
               result['dead'] << repo_str
               bump.call
               next
+            end
+
+            # Per-repo дополнение каталога: свежие name/description/version
+            # из registry.json самого расширения. Работает и для
+            # неустановленных — карточка обновляется без установки.
+            begin
+              guess_id = id_by_repo[repo_str].to_s
+              guess_id = repo_str.split('/').last.to_s if guess_id.empty?
+              if registry_meta_due?(guess_id, force, now)
+                per = Dn1sup::Updater.registry_entry(repo_str, guess_id)
+                if per.is_a?(Hash) && !per['id'].to_s.empty?
+                  result['registry_meta'][per['id'].to_s] = per
+                end
+              end
+            rescue StandardError => e
+              Dn1sup::Updater.log_error(e)
             end
 
             list = releases_list(repo_str, force)
@@ -1463,11 +1710,17 @@ module Dn1sup
             lists = fetched['releases'].is_a?(Hash) ? fetched['releases'] : {}
             failed = fetched['failed'].is_a?(Array) ? fetched['failed'] : []
             dead = fetched['dead'].is_a?(Array) ? fetched['dead'] : []
+            all = fetched['all_repos'].is_a?(Array) && !fetched['all_repos'].empty? ? fetched['all_repos'] : repos
+            total_n = all.size
             # Сводка видна и без debug-флага: иначе тихий 403 выглядел как
             # «обновлений нет».
-            store_log("проверка обновлений: получено #{lists.size}/#{repos.size}" \
+            store_log("проверка обновлений: получено #{lists.size}/#{total_n}" \
                       "#{(failed + dead).any? ? " (недоступны: #{(failed + dead).join(', ')})" : ''}")
+            store_log("каталог обновлён с GitHub") if fetched['remote_registry'].is_a?(Array) || (fetched['registry_meta'].is_a?(Hash) && !fetched['registry_meta'].empty?)
 
+          # Каталог применяем ДО статусов релизов и найденного: свежие
+          # записи видят и неустановленные карточки, и автопоиск.
+          apply_registry_refresh(fetched['remote_registry'], fetched['registry_meta'])
           # Пометки удалённых/переименованных применяем ДО слияния релизов и
           # найденного: они чистят кэши и @discovered_entries под эти репозитории.
           apply_repo_status(fetched['stale'])
@@ -1509,7 +1762,7 @@ module Dn1sup
           now = Time.now.to_i
           processed = lists.size + failed.size + dead.size
           @sync_status['fetched'] = processed
-          @sync_status['total'] = repos.size
+          @sync_status['total'] = total_n
           @sync_status['failed'] = (failed + dead).uniq
           @sync_status['checked_at'] = now
           if @dialog
@@ -1534,9 +1787,9 @@ module Dn1sup
               fetch_commits_async(dlg)
             end
             if notify_summary && @dialog
-              push_check_summary(dlg, products, processed, repos.size, (failed + dead).uniq, first_scan)
+              push_check_summary(dlg, products, processed, total_n, (failed + dead).uniq, first_scan)
             end
-            store_log("первое сканирование завершено: #{processed}/#{repos.size}") if first_scan
+            store_log("первое сканирование завершено: #{processed}/#{total_n}") if first_scan
             if @pending_force && @dialog
               @pending_force = false
               send_products_to_dialog(force: true)
