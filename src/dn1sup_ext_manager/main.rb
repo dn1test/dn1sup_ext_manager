@@ -20,7 +20,7 @@ module Dn1sup
 
   module ExtManager
     ID      = 'dn1sup_ext_manager'
-    VERSION = '0.19.0'
+    VERSION = '0.20.0'
     REPO    = 'dn1test/dn1sup_ext_manager'
     ASSET   = "#{ID}.rbz"
     # Папка разработки задана в самом расширении: корень этого репозитория
@@ -1171,21 +1171,31 @@ module Dn1sup
       []
     end
 
-    # Массовая установка/обновление. Возвращает сводку для тоста.
-    def perform_install_all(ids)
+    # Массовая установка/обновление. После каждого расширения пушит
+    # bulk_progress (current/total + имя + итог шага), в конце возвращает
+    # сводку для тоста.
+    def perform_install_all(ids, dlg = nil)
       ids = Array(ids).map(&:to_s).reject(&:empty?).uniq
       ids = default_install_targets if ids.empty?
       return { 'ok' => false, 'error' => 'Нет расширений для установки.' } if ids.empty?
 
       ok = 0
       failed = []
-      ids.each do |iid|
+      ids.each_with_index do |iid, i|
         res = perform_install(iid)
+        name = product_name(iid)
         if res && res['ok']
           ok += 1
         else
-          failed << product_name(iid)
+          failed << name
         end
+        push_result(dlg, 'bulk_progress',
+                    'action'  => 'install_all',
+                    'current' => i + 1,
+                    'total'   => ids.size,
+                    'id'      => iid.to_s,
+                    'name'    => name,
+                    'ok'      => !!(res && res['ok']))
       end
       store_log("массовая установка: ok=#{ok} fail=#{failed.size} (#{ids.size})")
       if failed.empty?
@@ -1200,8 +1210,9 @@ module Dn1sup
       { 'ok' => false, 'error' => "Исключение при массовой установке: #{e.message}" }
     end
 
-    # Массовое удаление (менеджер пропускается).
-    def perform_uninstall_all(ids)
+    # Массовое удаление (менеджер пропускается). Прогресс — как в
+    # perform_install_all: bulk_progress после каждого расширения.
+    def perform_uninstall_all(ids, dlg = nil)
       ids = Array(ids).map(&:to_s).reject(&:empty?).uniq
       ids = default_uninstall_targets if ids.empty?
       ids = ids.reject { |iid| iid == ID }
@@ -1209,13 +1220,21 @@ module Dn1sup
 
       ok = 0
       failed = []
-      ids.each do |iid|
+      ids.each_with_index do |iid, i|
         res = perform_uninstall(iid)
+        name = product_name(iid)
         if res && res['ok']
           ok += 1
         else
-          failed << product_name(iid)
+          failed << name
         end
+        push_result(dlg, 'bulk_progress',
+                    'action'  => 'uninstall_all',
+                    'current' => i + 1,
+                    'total'   => ids.size,
+                    'id'      => iid.to_s,
+                    'name'    => name,
+                    'ok'      => !!(res && res['ok']))
       end
       store_log("массовое удаление: ok=#{ok} fail=#{failed.size} (#{ids.size})")
       if failed.empty?
@@ -1766,7 +1785,7 @@ module Dn1sup
         send_products_to_dialog(force: false)
       when 'install_all'
         ids = extract_ids(param)
-        notify_action_result('__bulk__', 'install_all', perform_install_all(ids))
+        notify_action_result('__bulk__', 'install_all', perform_install_all(ids, dlg))
         send_products_to_dialog(force: false)
       when 'confirm_uninstall_all'
         ids = extract_ids(param)
@@ -1782,7 +1801,7 @@ module Dn1sup
         end
       when 'uninstall_all'
         ids = extract_ids(param)
-        notify_action_result('__bulk__', 'uninstall_all', perform_uninstall_all(ids))
+        notify_action_result('__bulk__', 'uninstall_all', perform_uninstall_all(ids, dlg))
         send_products_to_dialog(force: false)
       when 'hide'
         # Скрыть найденное на GitHub расширение (не из реестра)

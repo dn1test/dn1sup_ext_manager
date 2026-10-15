@@ -156,8 +156,15 @@ export function applyMockAction(name, params = {}) {
     const ids = Array.isArray(params.ids) && params.ids.length
       ? params.ids
       : mockProducts.filter(p => !p.is_installed || p.has_update || p.status === 'switch').map(p => p.id)
-    setTimeout(() => {
-      ids.forEach(pid => {
+    if (!ids.length) {
+      setTimeout(() => window.pushResult('action_result', {
+        id: '__bulk__', action: 'install_all', ok: false, error: 'Нет расширений для установки.'
+      }), 200)
+      return
+    }
+    // Пошаговый прогресс как в Ruby: bulk_progress после каждого расширения
+    ids.forEach((pid, i) => {
+      setTimeout(() => {
         const item = findProduct(pid)
         if (item) {
           item.is_installed = true
@@ -165,13 +172,19 @@ export function applyMockAction(name, params = {}) {
           item.has_update = false
           item.status = 'current'
         }
-      })
-      window.pushResult('action_result', {
-        id: '__bulk__', action: 'install_all', ok: true,
-        message: `Установлено/обновлено: ${ids.length}.`
-      })
-      setTimeout(() => window.pushState(mockPayload()), 50)
-    }, 800)
+        window.pushResult('bulk_progress', {
+          action: 'install_all', current: i + 1, total: ids.length,
+          id: pid, name: item ? item.name : pid, ok: true
+        })
+        if (i === ids.length - 1) {
+          window.pushResult('action_result', {
+            id: '__bulk__', action: 'install_all', ok: true,
+            message: `Установлено/обновлено: ${ids.length}.`
+          })
+          setTimeout(() => window.pushState(mockPayload()), 50)
+        }
+      }, 400 * (i + 1))
+    })
     return
   }
 
@@ -187,21 +200,33 @@ export function applyMockAction(name, params = {}) {
     const ids = Array.isArray(params.ids) && params.ids.length
       ? params.ids
       : mockProducts.filter(p => p.is_installed).map(p => p.id)
-    setTimeout(() => {
-      ids.forEach(pid => {
+    if (!ids.length) {
+      setTimeout(() => window.pushResult('action_result', {
+        id: '__bulk__', action: 'uninstall_all', ok: false, error: 'Нет установленных расширений для удаления.'
+      }), 200)
+      return
+    }
+    ids.forEach((pid, i) => {
+      setTimeout(() => {
         const item = findProduct(pid)
         if (item) {
           item.is_installed = false
           item.installed_version = null
           item.has_update = false
         }
-      })
-      window.pushResult('action_result', {
-        id: '__bulk__', action: 'uninstall_all', ok: true,
-        message: `Удалено: ${ids.length}.`
-      })
-      setTimeout(() => window.pushState(mockPayload()), 50)
-    }, 600)
+        window.pushResult('bulk_progress', {
+          action: 'uninstall_all', current: i + 1, total: ids.length,
+          id: pid, name: item ? item.name : pid, ok: true
+        })
+        if (i === ids.length - 1) {
+          window.pushResult('action_result', {
+            id: '__bulk__', action: 'uninstall_all', ok: true,
+            message: `Удалено: ${ids.length}.`
+          })
+          setTimeout(() => window.pushState(mockPayload()), 50)
+        }
+      }, 300 * (i + 1))
+    })
     return
   }
 

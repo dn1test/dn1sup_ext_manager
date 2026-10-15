@@ -68,6 +68,43 @@
       </button>
     </div>
 
+    <!-- Прогресс массовой установки/удаления -->
+    <div
+      v-if="state.bulk"
+      class="mx-3.5 mb-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-2.5 py-2 shrink-0"
+    >
+      <div class="flex items-center gap-2 text-xs font-medium">
+        <Loader2 v-if="bulkBusy" class="w-3.5 h-3.5 animate-spin text-brand-500 shrink-0" />
+        <CheckCircle2 v-else class="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+        <span class="flex-1 min-w-0 truncate">{{ bulkTitle }}</span>
+        <span class="tabular-nums text-slate-400 dark:text-slate-500 shrink-0">{{ bulkPercent }}%</span>
+      </div>
+      <div class="mt-1.5 h-1.5 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
+        <div
+          class="h-full rounded-full bg-brand-500 transition-all duration-300"
+          :style="{ width: bulkPercent + '%' }"
+        ></div>
+      </div>
+      <ul v-if="state.bulk.done.length || state.bulk.failed.length" class="mt-1.5 max-h-24 overflow-y-auto space-y-0.5 text-[11px] leading-tight">
+        <li
+          v-for="entry in state.bulk.done"
+          :key="'ok-' + entry.id"
+          class="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400"
+        >
+          <CheckCircle2 :size="11" class="shrink-0" />
+          <span class="truncate">{{ entry.name }}</span>
+        </li>
+        <li
+          v-for="entry in state.bulk.failed"
+          :key="'fail-' + entry.id"
+          class="flex items-center gap-1.5 text-red-500 dark:text-red-400"
+        >
+          <AlertCircle :size="11" class="shrink-0" />
+          <span class="truncate">{{ entry.name }} — не удалось</span>
+        </li>
+      </ul>
+    </div>
+
     <!-- Каталог -->
     <main class="flex-1 min-h-0 overflow-y-auto px-3.5 pb-5 space-y-2">
       <template v-if="view === 'cards'">
@@ -274,6 +311,21 @@ const counts = computed(() => ({
 }))
 
 const bulkBusy = computed(() => !!(state.busy && state.busy.id === '__bulk__'))
+const bulkPercent = computed(() => {
+  const b = state.bulk
+  if (!b || !b.total || b.total <= 0) return 0
+  return Math.min(100, Math.round((Number(b.current) || 0) / b.total * 100))
+})
+const bulkTitle = computed(() => {
+  const b = state.bulk
+  if (!b) return ''
+  const verb = b.action === 'uninstall_all' ? 'Удаление' : 'Установка'
+  const fails = (b.failed || []).length
+  const failSuffix = fails > 0 ? ` · ошибок: ${fails}` : ''
+  if (bulkBusy.value) return `${verb}… ${b.current || 0}/${b.total || 0}${failSuffix}`
+  const doneWord = b.action === 'uninstall_all' ? 'Удалено' : 'Установлено'
+  return `${doneWord}: ${(b.done || []).length} из ${b.total || 0}${failSuffix}`
+})
 const installCandidates = computed(() => state.products.filter(p => !p.is_installed || p.has_update || p.status === 'switch'))
 const uninstallCandidates = computed(() => state.products.filter(p => p.is_installed && p.id !== 'dn1sup_ext_manager'))
 
