@@ -69,7 +69,16 @@ module UI
 
   def messagebox(msg, _type = 0)
     $dialog_log << "MESSAGEBOX: #{msg}"
+    if defined?($messagebox_queue) && $messagebox_queue.is_a?(Array) && !$messagebox_queue.empty?
+      return $messagebox_queue.shift
+    end
     IDYES
+  end
+
+  def savepanel(*args)
+    $dialog_log << "SAVEPANEL: #{args.inspect}"
+    return nil unless defined?($savepanel_result)
+    $savepanel_result
   end
 
   def start_timer(*); end
@@ -105,8 +114,10 @@ end
 
 IDYES = 6
 IDNO  = 7
+IDCANCEL = 2
 MB_OK = 0
 MB_YESNO = 4
+MB_YESNOCANCEL = 3
 
 def file_loaded?(_); false; end
 def file_loaded(_); true; end
@@ -1346,6 +1357,60 @@ begin
          !!conf25 && conf25.include?('confirm_restart'), conf25.to_s[0, 160]
   assert 'dispatch confirm_restart — вопрос задан (messagebox)',
          $dialog_log.any? { |l| l.include?('MESSAGEBOX') && l.include?('Перезапустить') }
+
+  # Новая несохранённая сцена: Да/Нет/Отмена про первое сохранение
+  unsaved = Object.new
+  def unsaved.path; ''; end
+  def unsaved.modified?; true; end
+  def unsaved.saved_to; @saved_to; end
+  def unsaved.save(p); @saved_to = p; true; end
+  Sketchup.define_singleton_method(:active_model) { unsaved }
+  assert 'model_needs_first_save? — новая грязная сцена', Dn1sup::ExtManager.model_needs_first_save? == true
+  # Отмена — рестарт прерван, ok:false
+  $messagebox_queue = [IDCANCEL]
+  $savepanel_result = nil
+  store_dlg25.scripts.clear
+  $dialog_log.clear
+  Dn1sup::ExtManager.dispatch(store_dlg25, 'confirm_restart', '')
+  conf_cancel = store_dlg25.scripts.grep(/window\.pushResult\(/).last
+  assert 'confirm_restart Отмена — ok:false', !!conf_cancel && conf_cancel.include?('"ok":false'), conf_cancel.to_s[0, 200]
+  assert 'confirm_restart Отмена — спросили про сохранение',
+         $dialog_log.any? { |l| l.include?('ни разу не сохранялась') }
+  # Да + savepanel — сохранили, затем обычный вопрос о рестарте (ok:true)
+  $messagebox_queue = [IDYES, IDYES]
+  $savepanel_result = 'C:/docs/Новая сцена.skp'
+  def unsaved.path; @saved_to.to_s; end
+  unsaved.instance_variable_set(:@saved_to, '')
+  store_dlg25.scripts.clear
+  $dialog_log.clear
+  Dn1sup::ExtManager.dispatch(store_dlg25, 'confirm_restart', '')
+  conf_yes = store_dlg25.scripts.grep(/window\.pushResult\(/).last
+  assert 'confirm_restart Да — сохранили и ok:true',
+         !!conf_yes && conf_yes.include?('"ok":true'), conf_yes.to_s[0, 200]
+  assert 'confirm_restart Да — savepanel показан', $dialog_log.any? { |l| l.include?('SAVEPANEL') }
+  assert 'confirm_restart Да — модель сохранена', unsaved.saved_to == 'C:/docs/Новая сцена.skp', unsaved.saved_to.inspect
+  # Нет — без сохранения, обычный вопрос (ok:true)
+  unsaved.instance_variable_set(:@saved_to, '')
+  $messagebox_queue = [IDNO, IDYES]
+  $savepanel_result = nil
+  store_dlg25.scripts.clear
+  $dialog_log.clear
+  Dn1sup::ExtManager.dispatch(store_dlg25, 'confirm_restart', '')
+  conf_no = store_dlg25.scripts.grep(/window\.pushResult\(/).last
+  assert 'confirm_restart Нет — ok:true без сохранения',
+         !!conf_no && conf_no.include?('"ok":true'), conf_no.to_s[0, 200]
+  assert 'confirm_restart Нет — модель не сохранялась', unsaved.saved_to.to_s.empty?, unsaved.saved_to.inspect
+  # Чистая новая сцена — вопрос про сохранение не задаём
+  clean_model = Object.new
+  def clean_model.path; ''; end
+  def clean_model.modified?; false; end
+  def clean_model.entities; []; end
+  Sketchup.define_singleton_method(:active_model) { clean_model }
+  assert 'model_needs_first_save? — чистая сцена false', Dn1sup::ExtManager.model_needs_first_save? == false
+  # Возвращаем файловую модель для остальных проверок рестарта
+  Sketchup.define_singleton_method(:active_model) { fake_model }
+  $messagebox_queue = nil
+  $savepanel_result = nil
 
   # Диспетчер: restart без exe — тост с ошибкой, quit не вызван
   $quit_called = false

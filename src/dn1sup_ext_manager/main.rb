@@ -20,7 +20,7 @@ module Dn1sup
 
   module ExtManager
     ID      = 'dn1sup_ext_manager'
-    VERSION = '0.22.5'
+    VERSION = '0.22.6'
     REPO    = 'dn1test/dn1sup_ext_manager'
     ASSET   = "#{ID}.rbz"
     # Папка разработки задана в самом расширении: корень этого репозитория
@@ -2063,10 +2063,24 @@ module Dn1sup
         store_log("скрыт найденный репозиторий #{repo}")
         send_products_to_dialog(force: false)
       when 'confirm_restart'
-        # Вопрос после нажатия кнопки в шапке — через нативный диалог
-        # SketchUp (window.confirm в HtmlDialog на части сборок подавлен).
-        yes = defined?(UI) && UI.messagebox(restart_confirm_message, MB_YESNO) == IDYES
-        push_result(dlg, 'confirm_restart', 'ok' => !!yes)
+        # Новая несохранённая сцена: сначала Да/Нет/Отмена про сохранение.
+        # Отмена (или незавершённое сохранение) — прерываем рестарт.
+        if model_needs_first_save?
+          decision = prompt_first_save
+          if decision == :cancel
+            push_result(dlg, 'confirm_restart', 'ok' => false)
+          else
+            # Вопрос после нажатия кнопки в шапке — через нативный диалог
+            # SketchUp (window.confirm в HtmlDialog на части сборок подавлен).
+            yes = defined?(UI) && UI.messagebox(restart_confirm_message, MB_YESNO) == IDYES
+            push_result(dlg, 'confirm_restart', 'ok' => !!yes)
+          end
+        else
+          # Вопрос после нажатия кнопки в шапке — через нативный диалог
+          # SketchUp (window.confirm в HtmlDialog на части сборок подавлен).
+          yes = defined?(UI) && UI.messagebox(restart_confirm_message, MB_YESNO) == IDYES
+          push_result(dlg, 'confirm_restart', 'ok' => !!yes)
+        end
       when 'restart'
         res = perform_restart
         # При успехе приложение закрывается (уведомлять некого);
@@ -2311,6 +2325,81 @@ module Dn1sup
       buf.encode('UTF-8', 'UTF-16LE').split("\0").first.to_s
     rescue LoadError, StandardError
       ''
+    end
+
+    # Новая сцена без пути и с изменениями — перед рестартом предлагаем
+    # сначала сохранить (иначе данные потеряются: откроется пустая сцена).
+    # false = сохранять нечего (пути нет, но сцена чистая) или модели нет.
+    def model_needs_first_save?
+      return false unless defined?(Sketchup) && Sketchup.respond_to?(:active_model)
+
+      model = Sketchup.active_model
+      return false unless model
+      path = begin
+        model.path.to_s
+      rescue StandardError
+        ''
+      end
+      return false unless path.empty?
+
+      begin
+        return true if model.respond_to?(:modified?) && !!model.modified?
+      rescue StandardError
+        nil
+      end
+      # Фолбэк, когда modified? недоступен: непустая сцена считается грязной.
+      begin
+        if model.respond_to?(:entities)
+          ents = model.entities
+          return true if ents.respond_to?(:count) && ents.count.to_i > 0
+          return true if ents.respond_to?(:length) && ents.length.to_i > 0
+          return true if ents.respond_to?(:empty?) && !ents.empty?
+        end
+      rescue StandardError
+        nil
+      end
+      false
+    rescue StandardError
+      false
+    end
+
+    # Диалог «Сохранить перед перезапуском?» (Да/Нет/Отмена).
+    # :saved — сохранено, идём дальше к вопросу о рестарте;
+    # :skip — без сохранения (как раньше, откроется пустая сцена);
+    # :cancel — прерываем рестарт.
+    def prompt_first_save
+      return :skip unless defined?(UI) && UI.respond_to?(:messagebox)
+
+      mb_ync = defined?(MB_YESNOCANCEL) ? MB_YESNOCANCEL : 3
+      idyes = defined?(IDYES) ? IDYES : 6
+      idno = defined?(IDNO) ? IDNO : 7
+      answer = UI.messagebox(
+        "Текущая сцена ещё ни разу не сохранялась.\nСохранить её перед перезапуском?",
+        mb_ync
+      )
+      return :skip if answer == idno
+      return :cancel unless answer == idyes
+      return :skip unless UI.respond_to?(:savepanel)
+
+      file = UI.savepanel('Сохранить модель перед перезапуском', '', 'Без названия.skp')
+      return :cancel if file.to_s.strip.empty?
+
+      saved = begin
+        Sketchup.active_model.save(file.to_s)
+      rescue StandardError => e
+        Dn1sup::Updater.log_error(e)
+        false
+      end
+      unless saved
+        mb_ok = defined?(MB_OK) ? MB_OK : 0
+        UI.messagebox("Не удалось сохранить файл — перезапуск отменён:\n#{file}", mb_ok)
+        return :cancel
+      end
+      store_log("модель сохранена перед перезапуском: #{file}")
+      :saved
+    rescue StandardError => e
+      Dn1sup::Updater.log_error(e)
+      :cancel
     end
 
     # Текст нативного вопроса после нажатия кнопки — с версией SketchUp
