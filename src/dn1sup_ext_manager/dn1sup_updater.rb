@@ -98,11 +98,7 @@ module Dn1sup
     # папки Plugins SketchUp, а из рабочей папки репозитория — обновления
     # такой копии приходят из рабочей папки через reload, а не из
     # GitHub Releases, поэтому self-update отключён.
-    # Проверка маркера `.sketchup_dev.json` оставлена для переходного
-    # периода (старые dev-установки в Plugins).
     def dev_source?
-      return true if File.exist?(File.join(File.dirname(__FILE__), '.sketchup_dev.json'))
-
       dir = File.expand_path(File.dirname(__FILE__))
       !dir.include?('Plugins')
     rescue StandardError
