@@ -20,7 +20,7 @@ module Dn1sup
 
   module ExtManager
     ID      = 'dn1sup_ext_manager'
-    VERSION = '0.22.1'
+    VERSION = '0.22.2'
     REPO    = 'dn1test/dn1sup_ext_manager'
     ASSET   = "#{ID}.rbz"
     # Папка разработки задана в самом расширении: корень этого репозитория
@@ -2275,31 +2275,78 @@ module Dn1sup
       ''
     end
 
-    # Текст нативного вопроса после нажатия кнопки — с именем файла,
-    # чтобы было видно, что именно откроется после перезапуска.
+    # Версия запущенного SketchUp: [год_папки, строка_версии].
+    # '26.2.243' -> [2026, '26.2.243']; вне SketchUp -> [0, ''].
+    def running_version
+      v = defined?(Sketchup) && Sketchup.respond_to?(:version) ? Sketchup.version.to_s : ''
+      major = v.to_i
+      year = major >= 100 ? major : (major > 0 ? 2000 + major : 0)
+      [year, v]
+    rescue StandardError
+      [0, '']
+    end
+
+    # Человеческая подпись версии для вопроса: 'SketchUp 2026 (26.2.243)'.
+    def running_version_label
+      year, v = running_version
+      label = year > 0 ? "SketchUp #{year}" : 'SketchUp'
+      v.empty? ? label : "#{label} (#{v})"
+    end
+
+    # Точный exe текущего процесса через Win32 (не эвристика по папкам:
+    # при нескольких установленных версиях рестарт обязан поднять ту же).
+    # '' = недоступно (не-Windows, нет fiddle) — дальше работают эвристики.
+    def running_process_exe
+      require 'fiddle'
+      require 'fiddle/import'
+      mod = Module.new do
+        extend Fiddle::Importer
+        dlload 'kernel32.dll'
+        extern 'unsigned long GetModuleFileNameW(void*, char*, unsigned long)', :stdcall
+      end
+      buf = "\0".encode('UTF-16LE') * 260
+      len = mod.GetModuleFileNameW(0, buf, 260)
+      return '' if len.to_i <= 0
+
+      buf.encode('UTF-8', 'UTF-16LE').split("\0").first.to_s
+    rescue LoadError, StandardError
+      ''
+    end
+
+    # Текст нативного вопроса после нажатия кнопки — с версией SketchUp
+    # и именем файла, чтобы было видно, что именно перезапускается
+    # и что откроется после.
     def restart_confirm_message
       path = current_model_path
+      app = running_version_label
       if path.empty?
-        'Перезапустить SketchUp? Текущая сцена не сохранена в файл — ' \
+        "Перезапустить #{app}? Текущая сцена не сохранена в файл — " \
           'после перезапуска откроется пустая сцена. Продолжить?'
       else
-        "Перезапустить SketchUp и заново открыть файл?\n#{path}\n" \
+        "Перезапустить #{app} и заново открыть файл?\n#{path}\n" \
           'Несохранённые изменения предложат сохранить при закрытии.'
       end
     end
 
-    # Поиск SketchUp.exe: сначала точный путь от самого SketchUp
-    # (find_support_file знает актуальную раскладку — с 2025 exe живёт
-    # в подпапке SketchUp/, раньше лежал рядом), затем годовые кандидаты
-    # в обеих раскладках, затем glob. nil = не найден (тогда только
+    # Поиск SketchUp.exe: сначала точный exe текущего процесса (при
+    # нескольких установленных версиях рестарт поднимает ту же), затем
+    # точный путь от самого SketchUp (find_support_file знает актуальную
+    # раскладку — с 2025 exe живёт в подпапке SketchUp/, раньше лежал
+    # рядом), затем годовые кандидаты запущенной версии в обеих
+    # раскладках, затем glob. nil = не найден (тогда только
     # честная ошибка в UI, без quit).
     def sketchup_exe_path
       roots = [ENV['ProgramW6432'], ENV['ProgramFiles'], ENV['ProgramFiles(x86)']].compact.uniq
-      major = defined?(Sketchup) && Sketchup.respond_to?(:version) ? Sketchup.version.to_i : 0
-      year = major >= 100 ? major : (major > 0 ? 2000 + major : 0)
+      year, = running_version
       years = year > 0 ? [year, year - 1, year + 1] : []
 
       candidates = []
+      begin
+        via_proc = running_process_exe
+        candidates << via_proc unless via_proc.empty?
+      rescue StandardError
+        nil
+      end
       if defined?(Sketchup) && Sketchup.respond_to?(:find_support_file)
         begin
           via_api = Sketchup.find_support_file('SketchUp.exe').to_s

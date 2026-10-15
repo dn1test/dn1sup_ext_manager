@@ -1341,10 +1341,46 @@ begin
   assert 'dispatch restart без exe — quit не вызван', $quit_called == false
   Dn1sup::ExtManager.define_singleton_method(:sketchup_exe_path, orig_exe)
 
-  # Поиск exe: обе раскладки каталога (баг 0.22.0 — с 2025 exe лежит
-  # в подпапке SketchUp/). Герметично: все ProgramFiles-корни указывают
-  # во временную папку. В тестовом стабе Sketchup.version == '24.0.0'.
+  # Версия и exe текущего процесса: вопрос показывает версию,
+  # поиск предпочитает exe запущенного инстанса.
+  assert 'running_version из стаба', Dn1sup::ExtManager.running_version == [2024, '24.0.0'],
+         Dn1sup::ExtManager.running_version.inspect
+  assert 'running_version_label с версией',
+         Dn1sup::ExtManager.running_version_label == 'SketchUp 2024 (24.0.0)',
+         Dn1sup::ExtManager.running_version_label.inspect
+  assert 'restart_confirm_message содержит версию',
+         Dn1sup::ExtManager.restart_confirm_message.include?('SketchUp 2024'),
+         Dn1sup::ExtManager.restart_confirm_message
+  proc_exe = Dn1sup::ExtManager.running_process_exe
+  assert 'running_process_exe — строка без исключений', proc_exe.is_a?(String), proc_exe.inspect
+
   begin
+    saved_pf2 = [ENV['ProgramW6432'], ENV['ProgramFiles'], ENV['ProgramFiles(x86)']]
+    fake_root2 = Dir.mktmpdir('dn1sup_exe2')
+    ENV['ProgramW6432'] = fake_root2
+    ENV['ProgramFiles'] = fake_root2
+    ENV['ProgramFiles(x86)'] = fake_root2
+    proc_fake = File.join(fake_root2, 'custom', 'SketchUp.exe')
+    year_fake = File.join(fake_root2, 'SketchUp', 'SketchUp 2024', 'SketchUp.exe')
+    FileUtils.mkdir_p(File.dirname(proc_fake))
+    FileUtils.mkdir_p(File.dirname(year_fake))
+    FileUtils.touch(proc_fake)
+    FileUtils.touch(year_fake)
+    orig_proc = Dn1sup::ExtManager.method(:running_process_exe)
+    Dn1sup::ExtManager.define_singleton_method(:running_process_exe) { proc_fake }
+    assert 'sketchup_exe_path: exe процесса приоритетнее годовых кандидатов',
+           Dn1sup::ExtManager.sketchup_exe_path == proc_fake,
+           Dn1sup::ExtManager.sketchup_exe_path.inspect
+    Dn1sup::ExtManager.define_singleton_method(:running_process_exe, orig_proc)
+  ensure
+    ENV['ProgramW6432'], ENV['ProgramFiles'], ENV['ProgramFiles(x86)'] = saved_pf2 if defined?(saved_pf2)
+    FileUtils.remove_entry(fake_root2) if defined?(fake_root2) && fake_root2 && File.directory?(fake_root2)
+  end
+  # Поиск exe: обе раскладки каталога (с 2025 exe лежит в подпапке SketchUp/).
+  begin
+    # Глушим exe тестового процесса (иначе ruby.exe приоритетнее подмен).
+    orig_proc25 = Dn1sup::ExtManager.method(:running_process_exe)
+    Dn1sup::ExtManager.define_singleton_method(:running_process_exe) { '' }
     saved_pf = [ENV['ProgramW6432'], ENV['ProgramFiles'], ENV['ProgramFiles(x86)']]
     fake_root = Dir.mktmpdir('dn1sup_exe')
     ENV['ProgramW6432'] = fake_root
@@ -1384,6 +1420,7 @@ begin
            Dn1sup::ExtManager.sketchup_exe_path == alien_exe,
            Dn1sup::ExtManager.sketchup_exe_path.inspect
   ensure
+    Dn1sup::ExtManager.define_singleton_method(:running_process_exe, orig_proc25) if defined?(orig_proc25)
     ENV['ProgramW6432'], ENV['ProgramFiles'], ENV['ProgramFiles(x86)'] = saved_pf if defined?(saved_pf)
     Sketchup.singleton_class.send(:remove_method, :find_support_file) rescue nil
     FileUtils.remove_entry(fake_root) if defined?(fake_root) && fake_root && File.directory?(fake_root)
