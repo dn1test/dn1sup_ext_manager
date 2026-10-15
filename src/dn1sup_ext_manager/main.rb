@@ -20,7 +20,7 @@ module Dn1sup
 
   module ExtManager
     ID      = 'dn1sup_ext_manager'
-    VERSION = '0.22.3'
+    VERSION = '0.22.4'
     REPO    = 'dn1test/dn1sup_ext_manager'
     ASSET   = "#{ID}.rbz"
     # Папка разработки задана в самом расширении: корень этого репозитория
@@ -2429,7 +2429,14 @@ module Dn1sup
       dir = defined?(Sketchup) && Sketchup.respond_to?(:temp_dir) ? Sketchup.temp_dir.to_s : Dir.tmpdir.to_s
       watcher = File.join(dir, "dn1sup_restart_#{pid}.ps1")
       q = ->(s) { s.to_s.gsub("'", "''") }
-      launch = path.to_s.empty? ? "Start-Process -FilePath '#{q.call(exe)}'" : "Start-Process -FilePath '#{q.call(exe)}' -ArgumentList '#{q.call(path)}'"
+      # Путь модели — в двойных кавычках внутри '-строки: без них путь
+      # с пробелом («Тестовый файл.skp») резался по первому слову и новый
+      # процесс отвечал «Failed to open ...Тестовый».
+      launch = if path.to_s.empty?
+                 "Start-Process -FilePath '#{q.call(exe)}'"
+               else
+                 %Q(Start-Process -FilePath '#{q.call(exe)}' -ArgumentList '"#{q.call(path)}"')
+               end
       script = <<~PS
         $p = Get-Process -Id #{pid.to_i} -ErrorAction SilentlyContinue
         $gone = $true

@@ -1276,12 +1276,13 @@ begin
          Dn1sup::ExtManager.restart_confirm_message.include?('пустая сцена'),
          Dn1sup::ExtManager.restart_confirm_message
 
-  # С открытым файлом — вопрос содержит его путь
+  # С открытым файлом — вопрос содержит его путь (с пробелом и кириллицей,
+  # как живой кейс «Тестовый файл.skp»: регрессия 0.22.3 — обрезка по пробелу)
   fake_model = Object.new
-  def fake_model.path; 'C:/docs/kitchen.skp'; end
+  def fake_model.path; 'C:/docs/Тестовый файл.skp'; end
   Sketchup.define_singleton_method(:active_model) { fake_model }
   assert 'restart_confirm_message с файлом — содержит путь',
-         Dn1sup::ExtManager.restart_confirm_message.include?('C:/docs/kitchen.skp'),
+         Dn1sup::ExtManager.restart_confirm_message.include?('C:/docs/Тестовый файл.skp'),
          Dn1sup::ExtManager.restart_confirm_message
 
   # Поиск exe не роняет код (строка или nil)
@@ -1324,7 +1325,10 @@ begin
          watcher_src.include?("Get-Process -Id #{Process.pid}"), watcher_src[0, 200]
   assert 'watcher — пауза на освобождение лока', watcher_src.include?('Start-Sleep -Seconds 3'), watcher_src[0, 200]
   assert 'watcher — поднимает тот же exe с тем же файлом',
-         watcher_src.include?('C:/fake/SketchUp.exe') && watcher_src.include?('kitchen.skp'),
+         watcher_src.include?('C:/fake/SketchUp.exe') && watcher_src.include?('Тестовый файл.skp'),
+         watcher_src[0, 300]
+  assert 'watcher — путь с пробелом в кавычках (иначе обрезка по слову)',
+         watcher_src.include?(%(-ArgumentList '"C:/docs/Тестовый файл.skp"')),
          watcher_src[0, 300]
   assert 'watcher — без выхода процесса запуска нет (отмена в диалоге сохранения)',
          watcher_src.include?('if ($gone)'), watcher_src[0, 300]
