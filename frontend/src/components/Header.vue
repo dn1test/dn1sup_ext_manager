@@ -29,11 +29,16 @@
         <LayoutGrid v-else class="w-4 h-4" />
       </button>
       <button
-        class="p-1.5 rounded-lg text-slate-400 hover:text-brand-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-        title="Проверить обновления всех расширений"
+        class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-60 disabled:cursor-wait"
+        :class="refreshing
+          ? 'bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300'
+          : 'bg-brand-500 hover:bg-brand-600 text-white shadow-sm'"
+        :title="progressTitle || 'Проверить обновления всех расширений'"
+        :disabled="refreshing"
         @click="$emit('refresh')"
       >
-        <RotateCw class="w-4 h-4" :class="{ 'animate-spin': refreshing }" />
+        <RotateCw class="w-3.5 h-3.5" :class="{ 'animate-spin': refreshing }" />
+        <span>{{ progressTitle || 'Проверить обновления' }}</span>
       </button>
       <button
         class="p-1.5 rounded-lg text-slate-400 hover:text-brand-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
@@ -54,7 +59,8 @@ import { useTheme } from '../composables/useTheme'
 defineProps({
   version: { type: String, default: '—' },
   refreshing: { type: Boolean, default: false },
-  view: { type: String, default: 'cards' }
+  view: { type: String, default: 'cards' },
+  progressTitle: { type: String, default: '' }
 })
 defineEmits(['refresh', 'update:view'])
 

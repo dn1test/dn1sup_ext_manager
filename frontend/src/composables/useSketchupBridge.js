@@ -27,7 +27,7 @@ const state = reactive({
   ready: false,
   version: '…',
   products: [],  // [{id,name,description,author,repo,asset,discovered,installed_version,is_installed,latest_version,has_update,has_asset,status,dev_available,dev_version,changelog,commits,release_url,published_at}]
-  sync: { fetching: false, fetched: 0, total: 0, failed: [], checked_at: 0, snapshot_saved_at: 0 },
+  sync: { fetching: false, fetched: 0, total: 0, failed: [], checked_at: 0, snapshot_saved_at: 0, first_scan: false },
   busy: null,    // { id, action, text } — длительная операция над карточкой
   toast: null    // { kind: 'ok' | 'err' | 'info', text }
 })
@@ -58,7 +58,8 @@ if (typeof window !== 'undefined') {
         total: Number(payload.sync.total) || 0,
         failed: Array.isArray(payload.sync.failed) ? payload.sync.failed : [],
         checked_at: Number(payload.sync.checked_at) || 0,
-        snapshot_saved_at: Number(payload.sync.snapshot_saved_at) || 0
+        snapshot_saved_at: Number(payload.sync.snapshot_saved_at) || 0,
+        first_scan: !!payload.sync.first_scan
       }
     }
     clearBusy(null)
@@ -80,6 +81,13 @@ function emitResult(kind, payload) {
       toast('ok', payload.message || 'Операция успешно завершена!')
     } else {
       toast('err', payload.error || 'Произошла ошибка при выполнении операции.', 7000)
+    }
+    return
+  }
+  if (kind === 'check_summary') {
+    // Сводка кнопки «Проверить обновления» / первого сканирования.
+    if (payload.message) {
+      toast(payload.updates && Number(payload.updates) > 0 ? 'info' : 'ok', payload.message, 7000)
     }
     return
   }

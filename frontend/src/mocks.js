@@ -78,7 +78,7 @@ export function mockPayload() {
   return {
     version: '0.5.0-mock',
     products: mockProducts,
-    sync: { fetching: false, fetched: mockProducts.length, total: mockProducts.length, failed: [], checked_at: Date.now() / 1000 | 0, snapshot_saved_at: 0 }
+    sync: { fetching: false, fetched: mockProducts.length, total: mockProducts.length, failed: [], checked_at: Date.now() / 1000 | 0, snapshot_saved_at: 0, first_scan: false }
   }
 }
 
@@ -96,7 +96,9 @@ export function applyMockAction(name, params = {}) {
   const item = findProduct(id)
 
   if (name === 'refresh') {
-    setTimeout(() => window.pushState(mockPayload()), 300)
+    window.pushState({ version: '0.5.0-mock', products: mockProducts, sync: { fetching: true, fetched: 1, total: mockProducts.length, failed: [], checked_at: 0, snapshot_saved_at: 0, first_scan: false } })
+    setTimeout(() => window.pushState(mockPayload()), 600)
+    setTimeout(() => window.pushResult('check_summary', { ok: true, updates: 1, fetched: mockProducts.length, total: mockProducts.length, failed: [], message: 'Доступно обновлений: 1 (Demo Extension Two).' }), 700)
     return
   }
 

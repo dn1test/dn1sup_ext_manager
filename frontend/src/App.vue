@@ -1,11 +1,31 @@
 <template>
-  <div class="h-full flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 transition-colors">
+  <div class="h-full flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 transition-colors relative">
     <Header
       :version="state.version"
       :refreshing="headerRefreshing"
+      :progress-title="headerProgressTitle"
       v-model:view="view"
       @refresh="onRefresh"
     />
+
+    <!-- Блокирующее первое сканирование после установки -->
+    <div
+      v-if="isFirstScan"
+      class="absolute inset-0 z-40 flex flex-col items-center justify-center gap-3 bg-slate-50/95 dark:bg-slate-950/95 backdrop-blur-sm px-6 text-center"
+    >
+      <Loader2 class="w-8 h-8 animate-spin text-brand-500" />
+      <div class="text-sm font-semibold text-slate-600 dark:text-slate-200">Первое сканирование расширений…</div>
+      <div class="text-xs text-slate-400 dark:text-slate-500">
+        Ищем последние версии на GitHub. Это займёт меньше минуты.
+      </div>
+      <div class="w-64 max-w-full h-2 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
+        <div
+          class="h-full rounded-full bg-brand-500 transition-all duration-300"
+          :style="{ width: firstScanPercent + '%' }"
+        ></div>
+      </div>
+      <div class="text-[11px] tabular-nums text-slate-400 dark:text-slate-500">{{ firstScanText }}</div>
+    </div>
 
     <!-- Поиск и фильтры -->
     <div class="px-3.5 pt-2 pb-2 flex items-center gap-2 shrink-0">
@@ -179,6 +199,23 @@ function armLoadTimeout() {
 const refreshing = ref(false)
 const syncFetching = computed(() => !!(state.sync && state.sync.fetching))
 const headerRefreshing = computed(() => refreshing.value || syncFetching.value)
+const isFirstScan = computed(() => !!(state.sync && state.sync.first_scan && state.sync.fetching))
+const firstScanPercent = computed(() => {
+  const s = state.sync || {}
+  if (!s.total || s.total <= 0) return 15
+  return Math.min(100, Math.round((Number(s.fetched) || 0) / s.total * 100))
+})
+const firstScanText = computed(() => {
+  const s = state.sync || {}
+  if (s.total > 0) return `проверено ${s.fetched || 0}/${s.total}`
+  return 'подключаемся к GitHub…'
+})
+const headerProgressTitle = computed(() => {
+  const s = state.sync || {}
+  if (!s.fetching) return ''
+  if (s.total > 0) return s.first_scan ? `Сканирование… ${s.fetched || 0}/${s.total}` : `Проверка… ${s.fetched || 0}/${s.total}`
+  return s.first_scan ? 'Сканирование…' : 'Проверка…'
+})
 
 const syncText = computed(() => {
   const s = state.sync || {}

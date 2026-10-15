@@ -20,7 +20,7 @@ module Dn1sup
 
   module ExtManager
     ID      = 'dn1sup_ext_manager'
-    VERSION = '0.17.1'
+    VERSION = '0.18.0'
     REPO    = 'dn1test/dn1sup_ext_manager'
     ASSET   = "#{ID}.rbz"
     # Папка разработки задана в самом расширении: корень этого репозитория
@@ -70,8 +70,11 @@ module Dn1sup
     @pending_force = false
     # Сводка последней проверки для UI: сколько репозиториев опрошено,
     # какие не ответили (сеть/лимиты), когда проверено и дата снапшота.
+    # first_scan — блокирующее первое сканирование после установки:
+    # каталог показывает полноэкранный прогресс до конца обхода.
     @sync_status = { 'fetching' => false, 'fetched' => 0, 'total' => 0,
-                     'failed' => [], 'checked_at' => 0, 'snapshot_saved_at' => 0 }
+                     'failed' => [], 'checked_at' => 0, 'snapshot_saved_at' => 0,
+                     'first_scan' => false }
 
     module_function
 
@@ -462,8 +465,23 @@ module Dn1sup
         'total' => @sync_status['total'].to_i,
         'failed' => Array(@sync_status['failed']),
         'checked_at' => @sync_status['checked_at'].to_i,
-        'snapshot_saved_at' => snapshot_saved_at
+        'snapshot_saved_at' => snapshot_saved_at,
+        'first_scan' => !!@sync_status['first_scan']
       }
+    end
+
+    # Первое открытие после установки: кэши пусты и снапшота нет —
+    # нужен полный принудительный скан (релизы + автопоиск), а не тихий
+    # офлайн-рендер пустого каталога.
+    def first_run_scan?
+      return false unless @release_cache.empty? && @releases_cache.empty?
+
+      path = snapshot_path
+      return true if path.nil?
+
+      !File.file?(path)
+    rescue StandardError
+      false
     end
 
     # Базовая дата установки для расширений, поставленных вручную (installed_at
@@ -1134,17 +1152,33 @@ module Dn1sup
       #    Если кэш пуст (новая сессия) — подгружаем снапшот последних
       #    успешных релизов и найденных расширений, чтобы каталог был виден офлайн.
       load_release_snapshot if @release_cache.empty?
+      # Первый запуск после установки: снапшота нет — форсируем полный скан
+      # (релизы + автопоиск) и показываем блокирующий прогресс, а не пустой каталог.
+      first_scan = !force && first_run_scan?
+      use_force = force || first_scan
       local = collect_products_data(false, check_releases: false)
       seed_installed_at_baseline(local)
       store_debug("отрисовка каталога: #{local.is_a?(Array) ? local.size : 0} продуктов" \
-                  "#{force ? ', force-обновление' : ''}")
-      push_state(dlg, local)
+                  "#{force ? ', force-обновление' : ''}#{first_scan ? ', первое сканирование' : ''}")
 
       # 2. Фоновое обновление версий через сеть (только сетевые запросы, без SketchUp API в потоке)
       repos = merged_entries.map { |e| e['repo'].to_s }.uniq.reject(&:empty?)
+
+      if first_scan && !repos.empty?
+        # Блокирующий первый скан: прогресс виден уже в первом push_state.
+        @sync_status['total'] = repos.size
+        @sync_status['fetched'] = 0
+        @sync_status['failed'] = []
+        @sync_status['first_scan'] = true
+        @sync_status['fetching'] = true
+        @fetching = true
+        store_log("первое сканирование: полный опрос #{repos.size} репозиториев")
+      end
+      push_state(dlg, local)
+
       return if repos.empty?
 
-      if @fetching
+      if @fetching && !first_scan
         # Повторное нажатие «Обновить» во время обхода: второй параллельный
         # обход не запускаем (гонка merge! + перезапись push_state), а
         # запоминаем желание и доберём свежие данные по завершении текущего.
@@ -1152,11 +1186,16 @@ module Dn1sup
         store_debug('обновление уже идёт — повторный запрос коалесцирован')
         return
       end
+      if @fetching && first_scan
+        fetch_and_render(dlg, repos, true, attempts_left: 1, first_scan: true, notify_summary: true)
+        return
+      end
       @sync_status['total'] = repos.size
+      @sync_status['first_scan'] = false
       @fetching = true
       @sync_status['fetching'] = true
 
-      fetch_and_render(dlg, repos, force, attempts_left: 1)
+      fetch_and_render(dlg, repos, use_force, attempts_left: 1, first_scan: false, notify_summary: use_force)
     rescue StandardError => e
       Dn1sup::Updater.log_error(e)
     end
@@ -1165,12 +1204,41 @@ module Dn1sup
     # перерисовка каталога. Однократный автоповтор, если сеть была
     # недоступна в момент первого обхода. После релизов — фоновая догрузка
     # логов правок (коммитов) для продуктов с обновлением.
-    def fetch_and_render(dlg, repos, force, attempts_left: 0)
-      want_discovery = discovery_due?(force)
+    def fetch_and_render(dlg, repos, force, attempts_left: 0, first_scan: false, notify_summary: false)
+      want_discovery = discovery_due?(force) || first_scan
+      # Живой прогресс блокирующего первого скана: фон пишет fetched,
+      # главный поток раз в 0.5с пушит состояние (X/Y) в диалог.
+      progress_timer = nil
+      if first_scan && Dn1sup::Updater.async_ui? && defined?(UI) && UI.respond_to?(:start_timer)
+        begin
+          progress_timer = UI.start_timer(0.5, true) do
+            if @fetching && @dialog
+              begin
+                push_state(@dialog, collect_products_data(false, check_releases: false))
+              rescue StandardError => e
+                Dn1sup::Updater.log_error(e)
+              end
+            end
+          end
+        rescue StandardError => e
+          Dn1sup::Updater.log_error(e)
+          progress_timer = nil
+        end
+      end
+      stop_progress = lambda do
+        if progress_timer && defined?(UI) && UI.respond_to?(:stop_timer)
+          begin
+            UI.stop_timer(progress_timer)
+          rescue StandardError
+            nil
+          end
+        end
+      end
       Dn1sup::Updater.defer_async(
         lambda do
           result = { 'releases' => {}, 'discovered' => nil, 'stale' => {}, 'changelogs' => {}, 'failed' => [] }
           now = Time.now.to_i
+          done_count = 0
           repos.each do |repo|
             repo_str = repo.to_s
             next if repo_str.empty?
@@ -1207,6 +1275,15 @@ module Dn1sup
                 "https://raw.githubusercontent.com/#{repo_str}/main/CHANGELOG.md"
               )
               result['changelogs'][repo_str] = md unless md.nil?
+            end
+            done_count += 1
+            begin
+              CACHE_MUTEX.synchronize do
+                @sync_status['fetched'] = done_count
+                @sync_status['total'] = repos.size
+              end
+            rescue StandardError
+              nil
             end
           end
           renamed_found = result['stale'].values.any? { |m| m.is_a?(Hash) && m[:renamed] }
@@ -1273,19 +1350,29 @@ module Dn1sup
 
           missing = repos.size - lists.size
           if attempts_left > 0 && missing > 0 && @dialog
-            fetch_and_render(dlg, repos - lists.keys, force, attempts_left: attempts_left - 1)
+            fetch_and_render(dlg, repos - lists.keys, force, attempts_left: attempts_left - 1,
+                                                          first_scan: first_scan, notify_summary: notify_summary)
           elsif added_repos.any? && @dialog
             # Новонайденные расширения (в т.ч. на новом имени после
             # переименования) подтягивают релизы сразу, иначе карточки
             # появятся только при следующем открытии каталога.
-            fetch_and_render(dlg, added_repos, force, attempts_left: 0)
+            fetch_and_render(dlg, added_repos, force, attempts_left: 0,
+                                                  first_scan: false, notify_summary: notify_summary)
           else
+            stop_progress.call
             @fetching = false
             @sync_status['fetching'] = false
+            @sync_status['first_scan'] = false
+            products = []
             if @dialog
-              push_state(dlg, collect_products_data(false, check_releases: false))
+              products = collect_products_data(false, check_releases: false)
+              push_state(dlg, products)
               fetch_commits_async(dlg)
             end
+            if notify_summary && @dialog
+              push_check_summary(dlg, products, lists.size, repos.size, failed, first_scan)
+            end
+            store_log("первое сканирование завершено: #{lists.size}/#{repos.size}") if first_scan
             if @pending_force && @dialog
               @pending_force = false
               send_products_to_dialog(force: true)
@@ -1297,8 +1384,38 @@ module Dn1sup
       )
     rescue StandardError => e
       Dn1sup::Updater.log_error(e)
+      begin
+        stop_progress.call if defined?(stop_progress) && stop_progress
+      rescue StandardError
+        nil
+      end
       @fetching = false
       @sync_status['fetching'] = false
+      @sync_status['first_scan'] = false
+    end
+
+    # Сводка проверки для кнопки «Проверить обновления»: сколько обновлений
+    # найдено, сколько репозиториев не ответило. Уходит тостом в диалог.
+    def push_check_summary(dlg, products, fetched, total, failed, first_scan)
+      list = Array(products)
+      updates = list.select { |p| p.is_a?(Hash) && (p['has_update'] || p['status'] == 'switch') }
+      names = updates.first(5).map { |p| p['name'].to_s.empty? ? p['id'].to_s : p['name'].to_s }
+      if updates.empty?
+        text = first_scan ? "Первое сканирование завершено: проверено #{fetched}/#{total}, обновлений нет." : "Проверено #{fetched}/#{total}: обновлений нет."
+        push_result(dlg, 'check_summary', 'ok' => true, 'updates' => 0,
+                                               'fetched' => fetched, 'total' => total,
+                                               'failed' => Array(failed), 'message' => text)
+      else
+        extra = updates.size > names.size ? " и ещё #{updates.size - names.size}" : ''
+        text = "Доступно обновлений: #{updates.size} (#{names.join(', ')}#{extra})."
+        text += " Не ответили: #{Array(failed).size}." if Array(failed).any?
+        text = "Первое сканирование завершено. #{text}" if first_scan
+        push_result(dlg, 'check_summary', 'ok' => true, 'updates' => updates.size,
+                                               'fetched' => fetched, 'total' => total,
+                                               'failed' => Array(failed), 'message' => text)
+      end
+    rescue StandardError => e
+      Dn1sup::Updater.log_error(e)
     end
 
     # Логи правок: для продуктов с обновлением/сменой версии подтягиваем
@@ -1568,6 +1685,81 @@ module Dn1sup
       {}
     end
 
+    # Автоуведомление при старте SketchUp: фоново проверяем установленные
+    # расширения (только их репозитории — экономия квоты API, не чаще раза
+    # в сутки) и показываем ненавязчивое уведомление, если есть обновления.
+    # Без модальных диалогов, без открытия каталога.
+    def maybe_notify_updates_on_startup
+      return unless defined?(Sketchup) && defined?(UI)
+
+      begin
+        last = Sketchup.read_default('DN1Sup ExtManager', 'last_startup_notice', 0)
+        return if (Time.now.to_i - last.to_i) < DISCOVERY_INTERVAL
+      rescue StandardError
+        nil
+      end
+      begin
+        Sketchup.write_default('DN1Sup ExtManager', 'last_startup_notice', Time.now.to_i)
+      rescue StandardError
+        nil
+      end
+      load_release_snapshot if @release_cache.empty?
+      installed = merged_entries.select { |e| installed_version(e) }
+      repos = installed.map { |e| e['repo'].to_s }.uniq.reject(&:empty?)
+      return if repos.empty?
+
+      store_debug("стартовая проверка обновлений: #{repos.size} установленных")
+      Dn1sup::Updater.defer_async(
+        lambda do
+          found = []
+          repos.each do |repo|
+            list = begin
+              releases_list(repo, false)
+            rescue StandardError => e
+              Dn1sup::Updater.log_error(e)
+              []
+            end
+            next if list.empty?
+
+            offered = Dn1sup::Updater.choose_release(list)
+            next unless offered
+
+            entry = merged_entries.find { |e| e['repo'].to_s == repo }
+            next unless entry
+
+            inst = installed_version(entry)
+            next if inst.to_s.empty?
+
+            status = begin
+              safe_product_status(inst, offered, list, Dn1sup::Updater.installed_at(entry['id'].to_s))
+            rescue StandardError
+              nil
+            end
+            found << (entry['name'].to_s.empty? ? entry['id'].to_s : entry['name'].to_s) if status == 'update' || status == 'switch'
+          end
+          found
+        end,
+        lambda do |names_raw|
+          names = Array(names_raw).map(&:to_s).reject(&:empty?)
+          next if names.empty?
+          next unless defined?(UI)
+
+          text = names.size == 1 ? "Доступно обновление: #{names.first}. Откройте Extension Store." : "Доступно обновлений: #{names.size} (#{names.first(3).join(', ')}#{names.size > 3 ? '…' : ''}). Откройте Extension Store."
+          store_log("стартовая проверка: #{text}")
+          begin
+            if UI.respond_to?(:notification_available?) && UI.notification_available?
+              note = UI::Notification.new('DN1Sup Extension Store', text)
+              note.show
+            end
+          rescue StandardError => e
+            Dn1sup::Updater.log_error(e)
+          end
+        end
+      )
+    rescue StandardError => e
+      Dn1sup::Updater.log_error(e)
+    end
+
 
     # Показывает выпадающий список (fallback / CLI / тесты).
     def prompt_pick(entries)
@@ -1672,6 +1864,10 @@ module Dn1sup
       # Пункты расширения — в подменю «Extension Store» внутри DN1Sup
       menu = common.add_submenu('Extension Store')
       menu.add_item(catalog_command)
+      menu.add_item('Проверить обновления') do
+        open_store
+        UI.start_timer(0.5, false) { send_products_to_dialog(force: true) if @dialog }
+      end
       menu.add_item('Проверить обновления менеджера') do
         Dn1sup::Updater.check_local_first!({ id: ID, repo: REPO, version: VERSION, asset: ASSET, dev_dir: DEV_DIR, force: true, async: true })
       end
@@ -1690,8 +1886,10 @@ module Dn1sup
 
       # Фоновая проверка обновлений менеджера при запуске (сеть в потоке,
       # результат — ненавязчивое уведомление, без модальных диалогов).
+      # Плюс автоуведомление обо всех установленных расширениях.
       UI.start_timer(20, false) do
         Dn1sup::Updater.check_local_first!({ id: ID, repo: REPO, version: VERSION, asset: ASSET, dev_dir: DEV_DIR, async: true })
+        maybe_notify_updates_on_startup
       end
 
       file_loaded(__FILE__)
