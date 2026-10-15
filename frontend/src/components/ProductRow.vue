@@ -80,16 +80,7 @@
             Установить
           </button>
           <button
-            v-else-if="p.is_installed && !p.repo_status"
-            class="es-btn-ghost !h-[28px] !px-2 !text-xs"
-            title="Переустановить текущую версию"
-            @click="install(p.id, 'Переустановка…')"
-          >
-            <RotateCw :size="12" />
-            Переустановить
-          </button>
-          <button
-            v-else
+            v-else-if="!p.is_installed"
             class="es-btn-primary !h-[28px] !px-2 !text-xs"
             title="Скачать и установить в SketchUp"
             @click="install(p.id)"
