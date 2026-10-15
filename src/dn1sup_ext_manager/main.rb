@@ -2062,6 +2062,16 @@ module Dn1sup
         hide_repo(repo)
         store_log("скрыт найденный репозиторий #{repo}")
         send_products_to_dialog(force: false)
+      when 'confirm_restart'
+        # Вопрос после нажатия кнопки в шапке — через нативный диалог
+        # SketchUp (window.confirm в HtmlDialog на части сборок подавлен).
+        yes = defined?(UI) && UI.messagebox(restart_confirm_message, MB_YESNO) == IDYES
+        push_result(dlg, 'confirm_restart', 'ok' => !!yes)
+      when 'restart'
+        res = perform_restart
+        # При успехе приложение закрывается (уведомлять некого);
+        # при неудаче показываем ошибку тостом.
+        notify_action_result('__restart__', 'restart', res) unless res && res['ok']
       when 'log_js_error'
         log_js_error(param)
       else
@@ -2252,6 +2262,79 @@ module Dn1sup
       puts e.message
       puts e.backtrace.join("\n")
       nil
+    end
+
+    # ---- Перезапуск SketchUp с тем же файлом (кнопка в шапке) -------------
+
+    # Путь текущей модели ('' = новая несохранённая сцена).
+    def current_model_path
+      return '' unless defined?(Sketchup) && Sketchup.respond_to?(:active_model)
+
+      Sketchup.active_model&.path.to_s
+    rescue StandardError
+      ''
+    end
+
+    # Текст нативного вопроса после нажатия кнопки — с именем файла,
+    # чтобы было видно, что именно откроется после перезапуска.
+    def restart_confirm_message
+      path = current_model_path
+      if path.empty?
+        'Перезапустить SketchUp? Текущая сцена не сохранена в файл — ' \
+          'после перезапуска откроется пустая сцена. Продолжить?'
+      else
+        "Перезапустить SketchUp и заново открыть файл?\n#{path}\n" \
+          'Несохранённые изменения предложат сохранить при закрытии.'
+      end
+    end
+
+    # Поиск SketchUp.exe: год версии рядом с текущей + свежий glob.
+    # nil = не найден (тогда только честная ошибка в UI, без quit).
+    def sketchup_exe_path
+      major = defined?(Sketchup) && Sketchup.respond_to?(:version) ? Sketchup.version.to_i : 0
+      years = major > 2000 ? [major, major - 1, major + 1] : (major > 0 ? [2000 + major, 1999 + major, 2001 + major] : [])
+      roots = [ENV['ProgramW6432'], ENV['ProgramFiles'], ENV['ProgramFiles(x86)']].compact.uniq
+      candidates = []
+      years.each do |y|
+        roots.each do |root|
+          candidates << File.join(root, 'SketchUp', "SketchUp #{y}", 'SketchUp.exe')
+        end
+      end
+      hit = candidates.find { |p| File.file?(p) }
+      return hit if hit
+
+      globbed = Dir.glob('C:/Program Files/SketchUp/SketchUp */SketchUp.exe').sort
+      globbed.last unless globbed.empty?
+    rescue StandardError
+      nil
+    end
+
+    # Закрыть SketchUp и автоматически открыть заново с тем же файлом.
+    # Возвращает {'ok'=>true} при запущенном рестарте, иначе {'ok'=>false,'error'=>..}.
+    def perform_restart
+      unless defined?(Sketchup) && Sketchup.respond_to?(:quit)
+        return { 'ok' => false, 'error' => 'Перезапуск недоступен: Sketchup.quit не поддерживается.' }
+      end
+      exe = sketchup_exe_path
+      if exe.to_s.empty?
+        return { 'ok' => false, 'error' => 'Не найден SketchUp.exe — закройте и откройте SketchUp вручную.' }
+      end
+
+      path = current_model_path
+      store_log("перезапуск SketchUp#{path.empty? ? '' : " с файлом #{path}"}")
+      cmd = path.empty? ? %("#{exe}") : %(start "" "#{exe}" "#{path}")
+      # start — встроенная команда cmd.exe: запуск через cmd /c + detached,
+      # чтобы новый процесс пережил quit текущего.
+      if path.empty?
+        Process.spawn(exe, pgroup: true)
+      else
+        system(%(cmd /c #{cmd}), out: File::NULL, err: File::NULL)
+      end
+      Sketchup.quit
+      { 'ok' => true }
+    rescue StandardError => e
+      Dn1sup::Updater.log_error(e)
+      { 'ok' => false, 'error' => "Не удалось перезапустить: #{e.message}" }
     end
 
     # Команда «Каталог расширений» — общая для меню и тулбара.

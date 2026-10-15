@@ -196,6 +196,20 @@ export function applyMockAction(name, params = {}) {
     return
   }
 
+  if (name === 'confirm_restart') {
+    // В браузере без SketchUp считаем подтверждённым
+    setTimeout(() => window.pushResult('confirm_restart', { ok: true }), 100)
+    return
+  }
+
+  if (name === 'restart') {
+    setTimeout(() => window.pushResult('action_result', {
+      id: '__restart__', action: 'restart', ok: true,
+      message: 'SketchUp перезапускается… (демо-режим: перезапуск недоступен)'
+    }), 200)
+    return
+  }
+
   if (name === 'uninstall_all') {
     const ids = Array.isArray(params.ids) && params.ids.length
       ? params.ids

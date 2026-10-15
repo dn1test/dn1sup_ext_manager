@@ -143,6 +143,16 @@ function emitResult(kind, payload) {
     }
     return
   }
+  if (kind === 'confirm_restart') {
+    if (payload.ok) {
+      if (isMock) applyMockAction('restart')
+      else callRuby('restart')
+    } else {
+      clearBusy('__restart__')
+      clearBusy(null)
+    }
+    return
+  }
   if (kind === 'confirm_uninstall_all') {
     if (payload.ok) {
       const ids = Array.isArray(payload.ids) ? payload.ids : []
@@ -276,6 +286,18 @@ export function confirmUninstallAll(ids) {
   }
   state.busy = { id: '__bulk__', action: 'uninstall_all', text: 'Ожидание подтверждения…' }
   callRubyJson('confirm_uninstall_all', { ids: list })
+}
+
+/** Перезапуск SketchUp: вопрос — через нативный диалог SketchUp
+ *  (window.confirm в HtmlDialog на части сборок подавлен). */
+export function confirmRestart() {
+  if (isMock) {
+    state.busy = { id: '__restart__', action: 'restart', text: 'Ожидание подтверждения…' }
+    applyMockAction('confirm_restart')
+    return
+  }
+  state.busy = { id: '__restart__', action: 'restart', text: 'Ожидание подтверждения…' }
+  callRuby('confirm_restart')
 }
 
 export { state, isMock, toast, clearBusy }

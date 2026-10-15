@@ -1269,5 +1269,77 @@ ensure
   Sketchup.write_default('DN1Sup ExtManager', 'installed_dn1sup_save_settings', nil)
 end
 
+# 25. Кнопка «Перезапустить SketchUp» в шапке: вопрос + рестарт с тем же файлом
+begin
+  # Без активной модели — вопрос про пустую сцену, без исключений
+  assert 'restart_confirm_message без модели — про пустую сцену',
+         Dn1sup::ExtManager.restart_confirm_message.include?('пустая сцена'),
+         Dn1sup::ExtManager.restart_confirm_message
+
+  # С открытым файлом — вопрос содержит его путь
+  fake_model = Object.new
+  def fake_model.path; 'C:/docs/kitchen.skp'; end
+  Sketchup.define_singleton_method(:active_model) { fake_model }
+  assert 'restart_confirm_message с файлом — содержит путь',
+         Dn1sup::ExtManager.restart_confirm_message.include?('C:/docs/kitchen.skp'),
+         Dn1sup::ExtManager.restart_confirm_message
+
+  # Поиск exe не роняет код (строка или nil)
+  exe_probe = Dn1sup::ExtManager.sketchup_exe_path
+  assert 'sketchup_exe_path — строка или nil', exe_probe.nil? || exe_probe.is_a?(String), exe_probe.inspect
+
+  # Без Sketchup.quit — честная ошибка, без исключений
+  res = Dn1sup::ExtManager.perform_restart
+  assert 'perform_restart без Sketchup.quit — ok:false', res['ok'] == false, res.inspect
+
+  # С quit, но без exe — quit НЕ вызывается, ошибка про SketchUp.exe
+  $quit_called = false
+  Sketchup.define_singleton_method(:quit) { $quit_called = true }
+  res = Dn1sup::ExtManager.perform_restart
+  assert 'perform_restart без exe — ok:false про SketchUp.exe',
+         res['ok'] == false && res['error'].to_s.include?('SketchUp.exe'), res.inspect
+  assert 'perform_restart без exe — quit не вызван', $quit_called == false
+
+  # Счастливый путь: exe подменён, запуск и quit зафиксированы, модель та же
+  $system_cmd = nil
+  orig_exe = Dn1sup::ExtManager.method(:sketchup_exe_path)
+  Dn1sup::ExtManager.define_singleton_method(:sketchup_exe_path) { 'C:/fake/SketchUp.exe' }
+  Dn1sup::ExtManager.define_singleton_method(:system) { |*a| $system_cmd = a; true }
+  res = Dn1sup::ExtManager.perform_restart
+  assert 'perform_restart с exe — ok:true', res['ok'] == true, res.inspect
+  assert 'perform_restart — quit вызван', $quit_called == true
+  assert 'perform_restart — новый процесс с тем же файлом',
+         $system_cmd.to_s.include?('C:/fake/SketchUp.exe') && $system_cmd.to_s.include?('kitchen.skp'),
+         $system_cmd.inspect
+  Dn1sup::ExtManager.define_singleton_method(:sketchup_exe_path, orig_exe)
+  Dn1sup::ExtManager.singleton_class.send(:remove_method, :system)
+
+  # Диспетчер: confirm_restart — нативный вопрос, pushResult с ok
+  store_dlg25 = FakeStoreDialog.new
+  Dn1sup::ExtManager.instance_variable_set(:@dialog, store_dlg25)
+  $dialog_log.clear
+  Dn1sup::ExtManager.dispatch(store_dlg25, 'confirm_restart', '')
+  conf25 = store_dlg25.scripts.grep(/window\.pushResult\(/).last
+  assert 'dispatch confirm_restart -> pushResult(confirm_restart)',
+         !!conf25 && conf25.include?('confirm_restart'), conf25.to_s[0, 160]
+  assert 'dispatch confirm_restart — вопрос задан (messagebox)',
+         $dialog_log.any? { |l| l.include?('MESSAGEBOX') && l.include?('Перезапустить') }
+
+  # Диспетчер: restart без exe — тост с ошибкой, quit не вызван
+  $quit_called = false
+  Dn1sup::ExtManager.define_singleton_method(:sketchup_exe_path) { nil }
+  store_dlg25.scripts.clear
+  Dn1sup::ExtManager.dispatch(store_dlg25, 'restart', '')
+  res25 = store_dlg25.scripts.grep(/window\.pushResult\(/).last
+  assert 'dispatch restart без exe -> action_result ok:false',
+         !!res25 && res25.include?('false'), res25.to_s[0, 200]
+  assert 'dispatch restart без exe — quit не вызван', $quit_called == false
+  Dn1sup::ExtManager.define_singleton_method(:sketchup_exe_path, orig_exe)
+ensure
+  Sketchup.singleton_class.send(:remove_method, :active_model) rescue nil
+  Sketchup.singleton_class.send(:remove_method, :quit) rescue nil
+  Dn1sup::ExtManager.instance_variable_set(:@dialog, nil)
+end
+
 puts "\n#{$failed.zero? ? 'ALL TESTS PASSED' : "#{$failed} FAILED"}"
 exit($failed.zero? ? 0 : 1)
