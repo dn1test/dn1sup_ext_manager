@@ -1305,7 +1305,8 @@ begin
   assert 'perform_restart без exe — quit не вызван', $quit_called == false
   Dn1sup::ExtManager.define_singleton_method(:sketchup_exe_path, orig_exe_path)
 
-  # Счастливый путь: exe подменён, запуск и quit зафиксированы, модель та же
+  # Счастливый путь: watcher запланирован, quit вызван, скрипт ждёт PID
+  # и поднимает тот же exe с тем же файлом (гонка 0.22.2 — «файл занят»).
   $system_cmd = nil
   orig_exe = Dn1sup::ExtManager.method(:sketchup_exe_path)
   Dn1sup::ExtManager.define_singleton_method(:sketchup_exe_path) { 'C:/fake/SketchUp.exe' }
@@ -1313,11 +1314,23 @@ begin
   res = Dn1sup::ExtManager.perform_restart
   assert 'perform_restart с exe — ok:true', res['ok'] == true, res.inspect
   assert 'perform_restart — quit вызван', $quit_called == true
-  assert 'perform_restart — новый процесс с тем же файлом',
-         $system_cmd.to_s.include?('C:/fake/SketchUp.exe') && $system_cmd.to_s.include?('kitchen.skp'),
+  assert 'perform_restart — запуск через detached powershell-watcher',
+         $system_cmd.to_s.include?('powershell') && $system_cmd.to_s.include?('dn1sup_restart_'),
          $system_cmd.inspect
+  watcher_path = $system_cmd.to_s[/-File \\?"([^"\\]+\.ps1)\\?"/, 1]
+  assert 'perform_restart — watcher-файл создан', watcher_path && File.file?(watcher_path), watcher_path.inspect
+  watcher_src = watcher_path ? File.read(watcher_path, encoding: 'UTF-8') : ''
+  assert 'watcher — ждёт выхода текущего PID',
+         watcher_src.include?("Get-Process -Id #{Process.pid}"), watcher_src[0, 200]
+  assert 'watcher — пауза на освобождение лока', watcher_src.include?('Start-Sleep -Seconds 3'), watcher_src[0, 200]
+  assert 'watcher — поднимает тот же exe с тем же файлом',
+         watcher_src.include?('C:/fake/SketchUp.exe') && watcher_src.include?('kitchen.skp'),
+         watcher_src[0, 300]
+  assert 'watcher — без выхода процесса запуска нет (отмена в диалоге сохранения)',
+         watcher_src.include?('if ($gone)'), watcher_src[0, 300]
   Dn1sup::ExtManager.define_singleton_method(:sketchup_exe_path, orig_exe)
   Dn1sup::ExtManager.singleton_class.send(:remove_method, :system)
+  FileUtils.rm_f(watcher_path) if watcher_path
 
   # Диспетчер: confirm_restart — нативный вопрос, pushResult с ok
   store_dlg25 = FakeStoreDialog.new

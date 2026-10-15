@@ -20,7 +20,7 @@ module Dn1sup
 
   module ExtManager
     ID      = 'dn1sup_ext_manager'
-    VERSION = '0.22.2'
+    VERSION = '0.22.3'
     REPO    = 'dn1test/dn1sup_ext_manager'
     ASSET   = "#{ID}.rbz"
     # Папка разработки задана в самом расширении: корень этого репозитория
@@ -2384,7 +2384,13 @@ module Dn1sup
     end
 
     # Закрыть SketchUp и автоматически открыть заново с тем же файлом.
-    # Возвращает {'ok'=>true} при запущенном рестарте, иначе {'ok'=>false,'error'=>..}.
+    # Гонка 0.22.2: новый процесс стартовал раньше quit и заставал файл
+    # занятым старым процессом. Теперь запуск отложен: detached-наблюдатель
+    # (PowerShell) ждёт реального выхода PID, держит паузу 3с и только
+    # потом поднимает SketchUp с тем же файлом. Если пользователь отменил
+    # выход в диалоге сохранения — процесс жив, повторный запуск не
+    # происходит. Возвращает {'ok'=>true} при запланированном рестарте,
+    # иначе {'ok'=>false,'error'=>..}.
     def perform_restart
       unless defined?(Sketchup) && Sketchup.respond_to?(:quit)
         return { 'ok' => false, 'error' => 'Перезапуск недоступен: Sketchup.quit не поддерживается.' }
@@ -2396,19 +2402,49 @@ module Dn1sup
 
       path = current_model_path
       store_log("перезапуск SketchUp#{path.empty? ? '' : " с файлом #{path}"}")
-      cmd = path.empty? ? %("#{exe}") : %(start "" "#{exe}" "#{path}")
-      # start — встроенная команда cmd.exe: запуск через cmd /c + detached,
-      # чтобы новый процесс пережил quit текущего.
-      if path.empty?
-        Process.spawn(exe, pgroup: true)
-      else
-        system(%(cmd /c #{cmd}), out: File::NULL, err: File::NULL)
+      watcher = write_restart_watcher(exe, path, Process.pid)
+      unless watcher && File.file?(watcher)
+        return { 'ok' => false, 'error' => 'Не удалось запланировать перезапуск — закройте и откройте SketchUp вручную.' }
+      end
+      # start — встроенная команда cmd.exe: наблюдатель отцепляется и
+      # переживает quit текущего процесса.
+      launched = system(%(cmd /c start "" powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "#{watcher}"),
+                        out: File::NULL, err: File::NULL)
+      unless launched
+        FileUtils.rm_f(watcher)
+        return { 'ok' => false, 'error' => 'Не удалось запланировать перезапуск — закройте и откройте SketchUp вручную.' }
       end
       Sketchup.quit
       { 'ok' => true }
     rescue StandardError => e
       Dn1sup::Updater.log_error(e)
       { 'ok' => false, 'error' => "Не удалось перезапустить: #{e.message}" }
+    end
+
+    # PowerShell-наблюдатель рестарта: ждёт выхода PID (до 120с), пауза 3с
+    # на освобождение файлового лока, затем Start-Process с тем же файлом.
+    # Отмена выхода (процесс жив) — запуск не происходит. Скрипт пишется
+    # с BOM (кириллица в путях), после срабатывания удаляет сам себя.
+    def write_restart_watcher(exe, path, pid)
+      dir = defined?(Sketchup) && Sketchup.respond_to?(:temp_dir) ? Sketchup.temp_dir.to_s : Dir.tmpdir.to_s
+      watcher = File.join(dir, "dn1sup_restart_#{pid}.ps1")
+      q = ->(s) { s.to_s.gsub("'", "''") }
+      launch = path.to_s.empty? ? "Start-Process -FilePath '#{q.call(exe)}'" : "Start-Process -FilePath '#{q.call(exe)}' -ArgumentList '#{q.call(path)}'"
+      script = <<~PS
+        $p = Get-Process -Id #{pid.to_i} -ErrorAction SilentlyContinue
+        $gone = $true
+        if ($p) { $gone = $p.WaitForExit(120000) }
+        if ($gone) {
+          Start-Sleep -Seconds 3
+          #{launch}
+        }
+        Remove-Item -LiteralPath '#{q.call(watcher)}' -Force -ErrorAction SilentlyContinue
+      PS
+      File.write(watcher, "\uFEFF" + script, encoding: 'UTF-8')
+      watcher
+    rescue StandardError => e
+      Dn1sup::Updater.log_error(e)
+      nil
     end
 
     # Команда «Каталог расширений» — общая для меню и тулбара.
