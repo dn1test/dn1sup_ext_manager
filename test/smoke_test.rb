@@ -1292,13 +1292,18 @@ begin
   res = Dn1sup::ExtManager.perform_restart
   assert 'perform_restart без Sketchup.quit — ok:false', res['ok'] == false, res.inspect
 
-  # С quit, но без exe — quit НЕ вызывается, ошибка про SketchUp.exe
+  # С quit, но без exe — quit НЕ вызывается, ошибка про SketchUp.exe.
+  # (exe подменяем на nil: на машине с живым SketchUp эвристики иначе
+  # найдут настоящий exe и тест попытается его запустить.)
   $quit_called = false
   Sketchup.define_singleton_method(:quit) { $quit_called = true }
+  orig_exe_path = Dn1sup::ExtManager.method(:sketchup_exe_path)
+  Dn1sup::ExtManager.define_singleton_method(:sketchup_exe_path) { nil }
   res = Dn1sup::ExtManager.perform_restart
   assert 'perform_restart без exe — ok:false про SketchUp.exe',
          res['ok'] == false && res['error'].to_s.include?('SketchUp.exe'), res.inspect
   assert 'perform_restart без exe — quit не вызван', $quit_called == false
+  Dn1sup::ExtManager.define_singleton_method(:sketchup_exe_path, orig_exe_path)
 
   # Счастливый путь: exe подменён, запуск и quit зафиксированы, модель та же
   $system_cmd = nil
@@ -1335,6 +1340,54 @@ begin
          !!res25 && res25.include?('false'), res25.to_s[0, 200]
   assert 'dispatch restart без exe — quit не вызван', $quit_called == false
   Dn1sup::ExtManager.define_singleton_method(:sketchup_exe_path, orig_exe)
+
+  # Поиск exe: обе раскладки каталога (баг 0.22.0 — с 2025 exe лежит
+  # в подпапке SketchUp/). Герметично: все ProgramFiles-корни указывают
+  # во временную папку. В тестовом стабе Sketchup.version == '24.0.0'.
+  begin
+    saved_pf = [ENV['ProgramW6432'], ENV['ProgramFiles'], ENV['ProgramFiles(x86)']]
+    fake_root = Dir.mktmpdir('dn1sup_exe')
+    ENV['ProgramW6432'] = fake_root
+    ENV['ProgramFiles'] = fake_root
+    ENV['ProgramFiles(x86)'] = fake_root
+
+    old_exe = File.join(fake_root, 'SketchUp', 'SketchUp 2024', 'SketchUp.exe')
+    FileUtils.mkdir_p(File.dirname(old_exe))
+    FileUtils.touch(old_exe)
+    assert 'sketchup_exe_path: старая раскладка (год совпал)',
+           Dn1sup::ExtManager.sketchup_exe_path == old_exe,
+           Dn1sup::ExtManager.sketchup_exe_path.inspect
+
+    FileUtils.rm_f(old_exe)
+    new_exe = File.join(fake_root, 'SketchUp', 'SketchUp 2024', 'SketchUp', 'SketchUp.exe')
+    FileUtils.mkdir_p(File.dirname(new_exe))
+    FileUtils.touch(new_exe)
+    assert 'sketchup_exe_path: новая раскладка (подпапка SketchUp/)',
+           Dn1sup::ExtManager.sketchup_exe_path == new_exe,
+           Dn1sup::ExtManager.sketchup_exe_path.inspect
+
+    other_exe = File.join(fake_root, 'other', 'SketchUp.exe')
+    FileUtils.mkdir_p(File.dirname(other_exe))
+    FileUtils.touch(other_exe)
+    Sketchup.define_singleton_method(:find_support_file) { |*_a| other_exe }
+    assert 'sketchup_exe_path: find_support_file приоритетен',
+           Dn1sup::ExtManager.sketchup_exe_path == other_exe,
+           Dn1sup::ExtManager.sketchup_exe_path.inspect
+    Sketchup.singleton_class.send(:remove_method, :find_support_file)
+
+    FileUtils.rm_f(new_exe)
+    FileUtils.rm_f(other_exe)
+    alien_exe = File.join(fake_root, 'SketchUp', 'SketchUp 2026', 'SketchUp', 'SketchUp.exe')
+    FileUtils.mkdir_p(File.dirname(alien_exe))
+    FileUtils.touch(alien_exe)
+    assert 'sketchup_exe_path: glob-фолбэк на чужой год',
+           Dn1sup::ExtManager.sketchup_exe_path == alien_exe,
+           Dn1sup::ExtManager.sketchup_exe_path.inspect
+  ensure
+    ENV['ProgramW6432'], ENV['ProgramFiles'], ENV['ProgramFiles(x86)'] = saved_pf if defined?(saved_pf)
+    Sketchup.singleton_class.send(:remove_method, :find_support_file) rescue nil
+    FileUtils.remove_entry(fake_root) if defined?(fake_root) && fake_root && File.directory?(fake_root)
+  end
 ensure
   Sketchup.singleton_class.send(:remove_method, :active_model) rescue nil
   Sketchup.singleton_class.send(:remove_method, :quit) rescue nil

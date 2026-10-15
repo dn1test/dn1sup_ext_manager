@@ -20,7 +20,7 @@ module Dn1sup
 
   module ExtManager
     ID      = 'dn1sup_ext_manager'
-    VERSION = '0.22.0'
+    VERSION = '0.22.1'
     REPO    = 'dn1test/dn1sup_ext_manager'
     ASSET   = "#{ID}.rbz"
     # Папка разработки задана в самом расширении: корень этого репозитория
@@ -2288,23 +2288,50 @@ module Dn1sup
       end
     end
 
-    # Поиск SketchUp.exe: год версии рядом с текущей + свежий glob.
-    # nil = не найден (тогда только честная ошибка в UI, без quit).
+    # Поиск SketchUp.exe: сначала точный путь от самого SketchUp
+    # (find_support_file знает актуальную раскладку — с 2025 exe живёт
+    # в подпапке SketchUp/, раньше лежал рядом), затем годовые кандидаты
+    # в обеих раскладках, затем glob. nil = не найден (тогда только
+    # честная ошибка в UI, без quit).
     def sketchup_exe_path
-      major = defined?(Sketchup) && Sketchup.respond_to?(:version) ? Sketchup.version.to_i : 0
-      years = major > 2000 ? [major, major - 1, major + 1] : (major > 0 ? [2000 + major, 1999 + major, 2001 + major] : [])
       roots = [ENV['ProgramW6432'], ENV['ProgramFiles'], ENV['ProgramFiles(x86)']].compact.uniq
+      major = defined?(Sketchup) && Sketchup.respond_to?(:version) ? Sketchup.version.to_i : 0
+      year = major >= 100 ? major : (major > 0 ? 2000 + major : 0)
+      years = year > 0 ? [year, year - 1, year + 1] : []
+
       candidates = []
+      if defined?(Sketchup) && Sketchup.respond_to?(:find_support_file)
+        begin
+          via_api = Sketchup.find_support_file('SketchUp.exe').to_s
+          candidates << via_api unless via_api.empty?
+        rescue StandardError
+          nil
+        end
+      end
       years.each do |y|
         roots.each do |root|
+          candidates << File.join(root, 'SketchUp', "SketchUp #{y}", 'SketchUp', 'SketchUp.exe')
           candidates << File.join(root, 'SketchUp', "SketchUp #{y}", 'SketchUp.exe')
         end
       end
       hit = candidates.find { |p| File.file?(p) }
       return hit if hit
 
-      globbed = Dir.glob('C:/Program Files/SketchUp/SketchUp */SketchUp.exe').sort
-      globbed.last unless globbed.empty?
+      found = []
+      roots.each do |root|
+        base = root.to_s.gsub('\\', '/')
+        found.concat(Dir.glob("#{base}/SketchUp/SketchUp */SketchUp/SketchUp.exe"))
+        found.concat(Dir.glob("#{base}/SketchUp/SketchUp */SketchUp.exe"))
+      end
+      found = found.select { |p| File.file?(p) }.uniq
+      return nil if found.empty?
+
+      # Приоритет — год запущенной версии, иначе свежайшая папка.
+      with_year = found.map { |p| [p, p[/SketchUp (\d{4})/, 1].to_i] }
+      same = with_year.select { |_, y| y == year }.map(&:first)
+      return same.sort.last unless same.empty?
+
+      with_year.sort_by { |_, y| y }.last[0]
     rescue StandardError
       nil
     end
