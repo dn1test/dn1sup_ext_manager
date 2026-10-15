@@ -20,7 +20,7 @@ module Dn1sup
 
   module ExtManager
     ID      = 'dn1sup_ext_manager'
-    VERSION = '0.18.0'
+    VERSION = '0.18.1'
     REPO    = 'dn1test/dn1sup_ext_manager'
     ASSET   = "#{ID}.rbz"
     # Папка разработки задана в самом расширении: корень этого репозитория
@@ -36,6 +36,10 @@ module Dn1sup
     # репозитории и обновляется независимо.
     OWNER = 'dn1test'
     DISCOVERY_INTERVAL = 24 * 60 * 60
+    # Жёсткий предел одной проверки каталога: watchdog в прогресс-таймере
+    # принудительно завершает зависший обход, чтобы кнопка «Проверить
+    # обновления» не крутилась вечно (0/9 при мёртвой сети).
+    FETCH_TIMEOUT = 120
     # Проверка существования репозитория (repo_meta) при принудительном
     # обновлении — не чаще раза в 10 минут: экономит квоту GitHub API (60
     # req/час без токена), иначе каждое нажатие «Обновить» съедало ~9 запросов
@@ -1206,15 +1210,32 @@ module Dn1sup
     # логов правок (коммитов) для продуктов с обновлением.
     def fetch_and_render(dlg, repos, force, attempts_left: 0, first_scan: false, notify_summary: false)
       want_discovery = discovery_due?(force) || first_scan
-      # Живой прогресс блокирующего первого скана: фон пишет fetched,
-      # главный поток раз в 0.5с пушит состояние (X/Y) в диалог.
+      # Живой прогресс проверки: фон пишет fetched, главный поток раз в 0.5с
+      # пушит состояние (X/Y) в диалог. Раньше таймер включался только для
+      # first_scan — обычная кнопка «Проверить обновления» висела на 0/9
+      # до самого конца обхода. Плюс watchdog: обход дольше FETCH_TIMEOUT
+      # принудительно завершается, а не крутится вечно.
+      started_at = Time.now.to_i
       progress_timer = nil
-      if first_scan && Dn1sup::Updater.async_ui? && defined?(UI) && UI.respond_to?(:start_timer)
+      if Dn1sup::Updater.async_ui? && defined?(UI) && UI.respond_to?(:start_timer)
         begin
           progress_timer = UI.start_timer(0.5, true) do
             if @fetching && @dialog
               begin
-                push_state(@dialog, collect_products_data(false, check_releases: false))
+                if Time.now.to_i - started_at > FETCH_TIMEOUT
+                  @fetching = false
+                  @sync_status['fetching'] = false
+                  @sync_status['first_scan'] = false
+                  push_state(@dialog, collect_products_data(false, check_releases: false))
+                  push_result(@dialog, 'check_summary',
+                              'ok' => false, 'updates' => 0,
+                              'fetched' => @sync_status['fetched'].to_i,
+                              'total' => @sync_status['total'].to_i,
+                              'failed' => Array(@sync_status['failed']),
+                              'message' => 'Проверка заняла больше 2 минут — возможно, нет сети или GitHub недоступен. Показаны сохранённые данные.')
+                else
+                  push_state(@dialog, collect_products_data(false, check_releases: false))
+                end
               rescue StandardError => e
                 Dn1sup::Updater.log_error(e)
               end
@@ -1236,12 +1257,26 @@ module Dn1sup
       end
       Dn1sup::Updater.defer_async(
         lambda do
-          result = { 'releases' => {}, 'discovered' => nil, 'stale' => {}, 'changelogs' => {}, 'failed' => [] }
+          result = { 'releases' => {}, 'discovered' => nil, 'stale' => {}, 'changelogs' => {}, 'failed' => [], 'dead' => [] }
           now = Time.now.to_i
           done_count = 0
+          bump = lambda do
+            done_count += 1
+            begin
+              CACHE_MUTEX.synchronize do
+                @sync_status['fetched'] = done_count
+                @sync_status['total'] = repos.size
+              end
+            rescue StandardError
+              nil
+            end
+          end
           repos.each do |repo|
             repo_str = repo.to_s
-            next if repo_str.empty?
+            if repo_str.empty?
+              bump.call
+              next
+            end
 
             # Существование репозитория: раз в сутки, при force — не чаще раза
             # в REPO_CHECK_TTL (экономия квоты GitHub API).
@@ -1255,8 +1290,13 @@ module Dn1sup
             dead = meta.is_a?(Hash) ? (meta[:exists] == false || meta[:renamed]) : stale?(repo_str)
             # Мёртвый/перемещённый репозиторий на релизы не опрашиваем:
             # редирект переименования вернул бы релизы нового репозитория
-            # под старым именем.
-            next if dead
+            # под старым именем. Репозиторий считается обработанным: счётчик
+            # fetched растёт, иначе UI навсегда висел на 0/9.
+            if dead
+              result['dead'] << repo_str
+              bump.call
+              next
+            end
 
             list = releases_list(repo_str, force)
             if list.empty?
@@ -1276,14 +1316,23 @@ module Dn1sup
               )
               result['changelogs'][repo_str] = md unless md.nil?
             end
-            done_count += 1
-            begin
-              CACHE_MUTEX.synchronize do
-                @sync_status['fetched'] = done_count
-                @sync_status['total'] = repos.size
+            bump.call
+          end
+          # Однократный повтор — только сетевых неуспехов, в том же обходе:
+          # итоги (fetched/total) относятся ко всему списку repos, рекурсивный
+          # перезапуск ломал сводку (показывал итоги подмножества, напр. 1/1
+          # вместо 3/3). Мёртвые (gone/renamed) не повторяем.
+          if attempts_left > 0 && result['failed'].any?
+            retry_list = result['failed'].dup
+            result['failed'].clear
+            retry_list.each do |retry_repo|
+              next if retry_repo.to_s.empty? || result['dead'].include?(retry_repo)
+              retry_list_rel = releases_list(retry_repo, force)
+              if retry_list_rel.empty?
+                result['failed'] << retry_repo
+              else
+                result['releases'][retry_repo] = retry_list_rel
               end
-            rescue StandardError
-              nil
             end
           end
           renamed_found = result['stale'].values.any? { |m| m.is_a?(Hash) && m[:renamed] }
@@ -1293,13 +1342,15 @@ module Dn1sup
           result
         end,
         lambda do |fetched_raw|
-          fetched = fetched_raw.is_a?(Hash) ? fetched_raw : {}
-          lists = fetched['releases'].is_a?(Hash) ? fetched['releases'] : {}
-          failed = fetched['failed'].is_a?(Array) ? fetched['failed'] : []
-          # Сводка видна и без debug-флага: иначе тихий 403 выглядел как
-          # «обновлений нет».
-          store_log("проверка обновлений: получено #{lists.size}/#{repos.size}" \
-                    "#{failed.any? ? " (недоступны: #{failed.join(', ')})" : ''}")
+          begin
+            fetched = fetched_raw.is_a?(Hash) ? fetched_raw : {}
+            lists = fetched['releases'].is_a?(Hash) ? fetched['releases'] : {}
+            failed = fetched['failed'].is_a?(Array) ? fetched['failed'] : []
+            dead = fetched['dead'].is_a?(Array) ? fetched['dead'] : []
+            # Сводка видна и без debug-флага: иначе тихий 403 выглядел как
+            # «обновлений нет».
+            store_log("проверка обновлений: получено #{lists.size}/#{repos.size}" \
+                      "#{(failed + dead).any? ? " (недоступны: #{(failed + dead).join(', ')})" : ''}")
 
           # Пометки удалённых/переименованных применяем ДО слияния релизов и
           # найденного: они чистят кэши и @discovered_entries под эти репозитории.
@@ -1340,22 +1391,19 @@ module Dn1sup
           CACHE_MUTEX.synchronize { @changelog_md_cache.merge!(changelogs) } unless changelogs.empty?
           save_release_snapshot
           now = Time.now.to_i
-          @sync_status['fetched'] = lists.size
+          processed = lists.size + failed.size + dead.size
+          @sync_status['fetched'] = processed
           @sync_status['total'] = repos.size
-          @sync_status['failed'] = failed
+          @sync_status['failed'] = (failed + dead).uniq
           @sync_status['checked_at'] = now
           if @dialog
             push_state(dlg, collect_products_data(false, check_releases: false))
           end
 
-          missing = repos.size - lists.size
-          if attempts_left > 0 && missing > 0 && @dialog
-            fetch_and_render(dlg, repos - lists.keys, force, attempts_left: attempts_left - 1,
-                                                          first_scan: first_scan, notify_summary: notify_summary)
-          elsif added_repos.any? && @dialog
-            # Новонайденные расширения (в т.ч. на новом имени после
-            # переименования) подтягивают релизы сразу, иначе карточки
-            # появятся только при следующем открытии каталога.
+          # Новонайденные расширения (в т.ч. на новом имени после
+          # переименования) подтягивают релизы сразу, иначе карточки
+          # появятся только при следующем открытии каталога.
+          if added_repos.any? && @dialog
             fetch_and_render(dlg, added_repos, force, attempts_left: 0,
                                                   first_scan: false, notify_summary: notify_summary)
           else
@@ -1370,15 +1418,27 @@ module Dn1sup
               fetch_commits_async(dlg)
             end
             if notify_summary && @dialog
-              push_check_summary(dlg, products, lists.size, repos.size, failed, first_scan)
+              push_check_summary(dlg, products, processed, repos.size, (failed + dead).uniq, first_scan)
             end
-            store_log("первое сканирование завершено: #{lists.size}/#{repos.size}") if first_scan
+            store_log("первое сканирование завершено: #{processed}/#{repos.size}") if first_scan
             if @pending_force && @dialog
               @pending_force = false
               send_products_to_dialog(force: true)
             else
               @pending_force = false
             end
+          end
+          rescue StandardError => e
+            Dn1sup::Updater.log_error(e)
+            begin
+              stop_progress.call
+            rescue StandardError
+              nil
+            end
+            @fetching = false
+            @sync_status['fetching'] = false
+            @sync_status['first_scan'] = false
+            push_state(@dialog, collect_products_data(false, check_releases: false)) if @dialog
           end
         end
       )

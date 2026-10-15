@@ -34,7 +34,6 @@
           ? 'bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300'
           : 'bg-brand-500 hover:bg-brand-600 text-white shadow-sm'"
         :title="progressTitle || 'Проверить обновления всех расширений'"
-        :disabled="refreshing"
         @click="$emit('refresh')"
       >
         <RotateCw class="w-3.5 h-3.5" :class="{ 'animate-spin': refreshing }" />

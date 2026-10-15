@@ -156,7 +156,7 @@ import { Search, SearchX, Loader2, Hourglass, RotateCw, CheckCircle2, AlertCircl
 import Header from './components/Header.vue'
 import ProductCard from './components/ProductCard.vue'
 import ProductRow from './components/ProductRow.vue'
-import { state, refresh, loadState } from './composables/useSketchupBridge'
+import { state, refresh, loadState, toast } from './composables/useSketchupBridge'
 import { useTheme } from './composables/useTheme'
 
 useTheme()
@@ -199,6 +199,23 @@ function armLoadTimeout() {
 const refreshing = ref(false)
 const syncFetching = computed(() => !!(state.sync && state.sync.fetching))
 const headerRefreshing = computed(() => refreshing.value || syncFetching.value)
+// Watchdog: зависший sync.fetching (Ruby не пушит из-за мёртвой сети)
+// не должен крутиться молча — через 60с подсказываем проверить интернет.
+// Кнопка при этом остаётся кликабельной (повтор коалесцируется в Ruby).
+let stuckTimer = null
+const stuckNotified = ref(false)
+watch(syncFetching, (fetching) => {
+  clearTimeout(stuckTimer)
+  if (fetching) {
+    stuckNotified.value = false
+    stuckTimer = setTimeout(() => {
+      if (state.sync && state.sync.fetching && !stuckNotified.value) {
+        stuckNotified.value = true
+        toast('info', 'Проверка длится дольше обычного — возможно, нет сети или GitHub недоступен. Повторите позже.', 7000)
+      }
+    }, 60000)
+  }
+})
 const isFirstScan = computed(() => !!(state.sync && state.sync.first_scan && state.sync.fetching))
 const firstScanPercent = computed(() => {
   const s = state.sync || {}
