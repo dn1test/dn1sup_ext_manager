@@ -4,8 +4,11 @@
       :version="state.version"
       :refreshing="headerRefreshing"
       :progress-title="headerProgressTitle"
+      :filter="filter"
+      :counts="counts"
       v-model:view="view"
       @refresh="onRefresh"
+      @update:filter="filter = $event"
     />
 
     <!-- Блокирующее первое сканирование после установки -->
@@ -27,7 +30,7 @@
       <div class="text-[11px] tabular-nums text-slate-400 dark:text-slate-500">{{ firstScanText }}</div>
     </div>
 
-    <!-- Поиск и фильтры -->
+    <!-- Поиск и массовые действия -->
     <div class="px-3.5 pt-2 pb-2 flex items-center gap-2 shrink-0">
       <div class="relative flex-1 min-w-[160px]">
         <Search class="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 dark:text-slate-500 pointer-events-none" />
@@ -41,25 +44,28 @@
         >
       </div>
 
-      <div class="flex gap-0.5 bg-slate-200/60 dark:bg-slate-900 rounded-lg p-0.5 shrink-0">
-        <button
-          v-for="tab in tabs"
-          :key="tab.id"
-          class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap"
-          :class="filter === tab.id
-            ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm'
-            : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'"
-          @click="filter = tab.id"
-        >
-          <span>{{ tab.label }}</span>
-          <span
-            class="px-1.5 py-px rounded-full text-[10px] font-semibold tabular-nums"
-            :class="filter === tab.id
-              ? 'bg-brand-100 dark:bg-brand-900/60 text-brand-700 dark:text-brand-300'
-              : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'"
-          >{{ tab.count }}</span>
-        </button>
-      </div>
+      <button
+        class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors whitespace-nowrap shrink-0
+               bg-brand-500 hover:bg-brand-600 text-white shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+        :disabled="!installCandidates.length || bulkBusy"
+        :title="installCandidates.length ? `Установить и обновить: ${installCandidates.length}` : 'Все расширения уже установлены и актуальны'"
+        @click="onInstallAll"
+      >
+        <Download :size="14" />
+        <span>Установить все</span>
+      </button>
+      <button
+        class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors whitespace-nowrap shrink-0
+               bg-slate-200/70 hover:bg-red-100 dark:bg-slate-800 dark:hover:bg-red-900/40
+               text-slate-600 hover:text-red-600 dark:text-slate-300 dark:hover:text-red-400
+               disabled:opacity-50 disabled:cursor-not-allowed"
+        :disabled="!uninstallCandidates.length || bulkBusy"
+        :title="uninstallCandidates.length ? `Удалить установленные: ${uninstallCandidates.length}` : 'Нет установленных расширений'"
+        @click="onUninstallAll"
+      >
+        <Trash2 :size="14" />
+        <span>Удалить все</span>
+      </button>
     </div>
 
     <!-- Каталог -->
@@ -152,11 +158,11 @@
 
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
-import { Search, SearchX, Loader2, Hourglass, RotateCw, CheckCircle2, AlertCircle, Info } from 'lucide-vue-next'
+import { Search, SearchX, Loader2, Hourglass, RotateCw, CheckCircle2, AlertCircle, Info, Download, Trash2 } from 'lucide-vue-next'
 import Header from './components/Header.vue'
 import ProductCard from './components/ProductCard.vue'
 import ProductRow from './components/ProductRow.vue'
-import { state, refresh, loadState, toast } from './composables/useSketchupBridge'
+import { state, refresh, loadState, toast, installAll, confirmUninstallAll } from './composables/useSketchupBridge'
 import { useTheme } from './composables/useTheme'
 
 useTheme()
@@ -261,17 +267,25 @@ function onRefresh() {
 const filter = ref('all')
 const searchQuery = ref('')
 
-const tabs = computed(() => [
-  { id: 'all', label: 'Все', count: counts.value.all },
-  { id: 'installed', label: 'Установленные', count: counts.value.installed },
-  { id: 'updates', label: 'Обновления', count: counts.value.updates }
-])
-
 const counts = computed(() => ({
   all: state.products.length,
   installed: state.products.filter(p => p.is_installed).length,
   updates: state.products.filter(p => p.has_update || p.status === 'switch').length
 }))
+
+const bulkBusy = computed(() => !!(state.busy && state.busy.id === '__bulk__'))
+const installCandidates = computed(() => state.products.filter(p => !p.is_installed || p.has_update || p.status === 'switch'))
+const uninstallCandidates = computed(() => state.products.filter(p => p.is_installed && p.id !== 'dn1sup_ext_manager'))
+
+function onInstallAll() {
+  if (!installCandidates.value.length || bulkBusy.value) return
+  installAll(installCandidates.value.map(p => p.id))
+}
+
+function onUninstallAll() {
+  if (!uninstallCandidates.value.length || bulkBusy.value) return
+  confirmUninstallAll(uninstallCandidates.value.map(p => p.id))
+}
 
 const filteredProducts = computed(() => {
   const q = searchQuery.value.trim().toLowerCase()

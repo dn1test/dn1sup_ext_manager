@@ -1,7 +1,8 @@
 <template>
   <header
-    class="px-3.5 py-2.5 flex items-center justify-between border-b border-slate-200/70 dark:border-slate-800/70 bg-white/70 dark:bg-slate-900/70 shrink-0"
+    class="px-3.5 pt-2.5 pb-2 flex flex-col gap-2 border-b border-slate-200/70 dark:border-slate-800/70 bg-white/70 dark:bg-slate-900/70 shrink-0"
   >
+    <div class="flex items-center justify-between gap-2">
     <div class="flex items-center gap-2 min-w-0">
       <div class="w-8 h-8 rounded-lg bg-brand-500 flex items-center justify-center shrink-0">
         <Package class="w-4 h-4 text-white" />
@@ -19,7 +20,7 @@
       </div>
     </div>
 
-    <div class="flex items-center gap-1">
+    <div class="flex items-center gap-1 shrink-0">
       <button
         class="p-1.5 rounded-lg text-slate-400 hover:text-brand-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
         :title="view === 'cards' ? 'Переключить на список' : 'Переключить на карточки'"
@@ -48,20 +49,50 @@
         <Moon v-else class="w-4 h-4" />
       </button>
     </div>
+    </div>
+
+    <nav class="flex gap-0.5 bg-slate-200/60 dark:bg-slate-900 rounded-lg p-0.5">
+      <button
+        v-for="tab in tabs"
+        :key="tab.id"
+        class="flex-1 flex items-center justify-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap"
+        :class="filter === tab.id
+          ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm'
+          : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'"
+        @click="$emit('update:filter', tab.id)"
+      >
+        <span>{{ tab.label }}</span>
+        <span
+          class="px-1.5 py-px rounded-full text-[10px] font-semibold tabular-nums"
+          :class="filter === tab.id
+            ? 'bg-brand-100 dark:bg-brand-900/60 text-brand-700 dark:text-brand-300'
+            : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'"
+        >{{ tab.count }}</span>
+      </button>
+    </nav>
   </header>
 </template>
 
 <script setup>
+import { computed } from 'vue'
 import { Package, RotateCw, Sun, Moon, Rows3, LayoutGrid } from 'lucide-vue-next'
 import { useTheme } from '../composables/useTheme'
 
-defineProps({
+const props = defineProps({
   version: { type: String, default: '—' },
   refreshing: { type: Boolean, default: false },
   view: { type: String, default: 'cards' },
-  progressTitle: { type: String, default: '' }
+  progressTitle: { type: String, default: '' },
+  filter: { type: String, default: 'all' },
+  counts: { type: Object, default: () => ({ all: 0, installed: 0, updates: 0 }) }
 })
-defineEmits(['refresh', 'update:view'])
+defineEmits(['refresh', 'update:view', 'update:filter'])
 
 const { isDark, toggleTheme } = useTheme()
+
+const tabs = computed(() => [
+  { id: 'all', label: 'Все', count: props.counts.all ?? 0 },
+  { id: 'installed', label: 'Установленные', count: props.counts.installed ?? 0 },
+  { id: 'updates', label: 'Обновления', count: props.counts.updates ?? 0 }
+])
 </script>

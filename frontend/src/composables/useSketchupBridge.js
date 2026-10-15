@@ -94,10 +94,24 @@ function emitResult(kind, payload) {
   if (kind === 'confirm_uninstall') {
     if (payload.ok) {
       state.busy = { id: payload.id, action: 'uninstall', text: 'Удаление…' }
-      callRubyJson('uninstall', { id: payload.id })
+      if (isMock) applyMockAction('uninstall', { id: payload.id })
+      else callRubyJson('uninstall', { id: payload.id })
     } else {
       clearBusy(payload.id)
     }
+    return
+  }
+  if (kind === 'confirm_uninstall_all') {
+    if (payload.ok) {
+      const ids = Array.isArray(payload.ids) ? payload.ids : []
+      state.busy = { id: '__bulk__', action: 'uninstall_all', text: 'Удаление…' }
+      if (isMock) applyMockAction('uninstall_all', { ids })
+      else callRubyJson('uninstall_all', { ids })
+    } else {
+      clearBusy('__bulk__')
+      clearBusy(null)
+    }
+    return
   }
 }
 
@@ -194,6 +208,30 @@ export function hide(repo) {
     return
   }
   callRubyJson('hide', { repo })
+}
+
+/** Массовая установка/обновление: неустановленные + обновления. */
+export function installAll(ids) {
+  const list = Array.isArray(ids) ? ids : []
+  if (isMock) {
+    state.busy = { id: '__bulk__', action: 'install_all', text: 'Установка…' }
+    applyMockAction('install_all', { ids: list })
+    return
+  }
+  state.busy = { id: '__bulk__', action: 'install_all', text: 'Установка…' }
+  callRubyJson('install_all', { ids: list })
+}
+
+/** Подтверждение массового удаления через нативный диалог SketchUp. */
+export function confirmUninstallAll(ids) {
+  const list = Array.isArray(ids) ? ids : []
+  if (isMock) {
+    state.busy = { id: '__bulk__', action: 'uninstall_all', text: 'Ожидание подтверждения…' }
+    applyMockAction('confirm_uninstall_all', { ids: list })
+    return
+  }
+  state.busy = { id: '__bulk__', action: 'uninstall_all', text: 'Ожидание подтверждения…' }
+  callRubyJson('confirm_uninstall_all', { ids: list })
 }
 
 export { state, isMock, toast, clearBusy }

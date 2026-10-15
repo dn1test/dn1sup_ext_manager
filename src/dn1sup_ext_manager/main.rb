@@ -1133,6 +1133,103 @@ module Dn1sup
       { 'ok' => false, 'error' => "Ошибка при удалении: #{e.message}" }
     end
 
+    # Список id из JSON-параметра bulk-команд: {ids:[...]} / {id:'...'} / [...].
+    def extract_ids(param)
+      data = parse_json(param)
+      ids = if data.is_a?(Hash) && data['ids'].is_a?(Array)
+              data['ids']
+            elsif data.is_a?(Array)
+              data
+            elsif data.is_a?(Hash) && data['id']
+              [data['id']]
+            else
+              []
+            end
+      ids.map(&:to_s).reject(&:empty?).uniq
+    rescue StandardError
+      []
+    end
+
+    # Цели «Установить все» по текущему каталогу: неустановленные +
+    # обновления (has_update / switch).
+    def default_install_targets
+      collect_products_data(false, check_releases: false)
+        .select { |p| !p['is_installed'] || p['has_update'] || p['status'].to_s == 'switch' }
+        .map { |p| p['id'].to_s }.reject(&:empty?).uniq
+    rescue StandardError => e
+      Dn1sup::Updater.log_error(e)
+      []
+    end
+
+    # Цели «Удалить все»: установленные, кроме самого менеджера.
+    def default_uninstall_targets
+      collect_products_data(false, check_releases: false)
+        .select { |p| p['is_installed'] && p['id'].to_s != ID }
+        .map { |p| p['id'].to_s }.reject(&:empty?).uniq
+    rescue StandardError => e
+      Dn1sup::Updater.log_error(e)
+      []
+    end
+
+    # Массовая установка/обновление. Возвращает сводку для тоста.
+    def perform_install_all(ids)
+      ids = Array(ids).map(&:to_s).reject(&:empty?).uniq
+      ids = default_install_targets if ids.empty?
+      return { 'ok' => false, 'error' => 'Нет расширений для установки.' } if ids.empty?
+
+      ok = 0
+      failed = []
+      ids.each do |iid|
+        res = perform_install(iid)
+        if res && res['ok']
+          ok += 1
+        else
+          failed << product_name(iid)
+        end
+      end
+      store_log("массовая установка: ok=#{ok} fail=#{failed.size} (#{ids.size})")
+      if failed.empty?
+        { 'ok' => true, 'message' => "Установлено/обновлено: #{ok} из #{ids.size}." }
+      elsif ok.positive?
+        { 'ok' => true, 'message' => "Установлено: #{ok} из #{ids.size}. Не удалось: #{failed.join(', ')}." }
+      else
+        { 'ok' => false, 'error' => "Не удалось установить: #{failed.join(', ')}." }
+      end
+    rescue StandardError => e
+      Dn1sup::Updater.log_error(e)
+      { 'ok' => false, 'error' => "Исключение при массовой установке: #{e.message}" }
+    end
+
+    # Массовое удаление (менеджер пропускается).
+    def perform_uninstall_all(ids)
+      ids = Array(ids).map(&:to_s).reject(&:empty?).uniq
+      ids = default_uninstall_targets if ids.empty?
+      ids = ids.reject { |iid| iid == ID }
+      return { 'ok' => false, 'error' => 'Нет установленных расширений для удаления.' } if ids.empty?
+
+      ok = 0
+      failed = []
+      ids.each do |iid|
+        res = perform_uninstall(iid)
+        if res && res['ok']
+          ok += 1
+        else
+          failed << product_name(iid)
+        end
+      end
+      store_log("массовое удаление: ok=#{ok} fail=#{failed.size} (#{ids.size})")
+      if failed.empty?
+        { 'ok' => true, 'message' => "Удалено: #{ok} из #{ids.size}. Записи в меню исчезнут после перезапуска SketchUp." }
+      elsif ok.positive?
+        { 'ok' => true, 'message' => "Удалено: #{ok} из #{ids.size}. Не удалось: #{failed.join(', ')}." }
+      else
+        { 'ok' => false, 'error' => "Не удалось удалить: #{failed.join(', ')}." }
+      end
+    rescue StandardError => e
+      Dn1sup::Updater.log_error(e)
+      { 'ok' => false, 'error' => "Исключение при массовом удалении: #{e.message}" }
+    end
+
     # ---- UI & HtmlDialog --------------------------------------------------
     #
     # Обмен Ruby ↔ JS (единый паттерн с dn1sup_create_project /
@@ -1666,6 +1763,26 @@ module Dn1sup
       when 'uninstall'
         id = parse_json(param)['id']
         notify_action_result(id, 'uninstall', perform_uninstall(id))
+        send_products_to_dialog(force: false)
+      when 'install_all'
+        ids = extract_ids(param)
+        notify_action_result('__bulk__', 'install_all', perform_install_all(ids))
+        send_products_to_dialog(force: false)
+      when 'confirm_uninstall_all'
+        ids = extract_ids(param)
+        ids = default_uninstall_targets if ids.empty?
+        ids = ids.reject { |iid| iid == ID }
+        if ids.empty?
+          notify_action_result('__bulk__', 'uninstall_all',
+                               'ok' => false, 'error' => 'Нет установленных расширений для удаления.')
+        else
+          msg = "Удалить #{ids.size} расширений из SketchUp?\n#{ids.map { |iid| "• #{product_name(iid)}" }.join("\n")}"
+          yes = defined?(UI) && UI.messagebox(msg, MB_YESNO) == IDYES
+          push_result(dlg, 'confirm_uninstall_all', 'ids' => ids, 'ok' => !!yes)
+        end
+      when 'uninstall_all'
+        ids = extract_ids(param)
+        notify_action_result('__bulk__', 'uninstall_all', perform_uninstall_all(ids))
         send_products_to_dialog(force: false)
       when 'hide'
         # Скрыть найденное на GitHub расширение (не из реестра)

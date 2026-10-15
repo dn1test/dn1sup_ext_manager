@@ -152,6 +152,59 @@ export function applyMockAction(name, params = {}) {
     return
   }
 
+  if (name === 'install_all') {
+    const ids = Array.isArray(params.ids) && params.ids.length
+      ? params.ids
+      : mockProducts.filter(p => !p.is_installed || p.has_update || p.status === 'switch').map(p => p.id)
+    setTimeout(() => {
+      ids.forEach(pid => {
+        const item = findProduct(pid)
+        if (item) {
+          item.is_installed = true
+          item.installed_version = withVersion(item.latest_version)
+          item.has_update = false
+          item.status = 'current'
+        }
+      })
+      window.pushResult('action_result', {
+        id: '__bulk__', action: 'install_all', ok: true,
+        message: `Установлено/обновлено: ${ids.length}.`
+      })
+      setTimeout(() => window.pushState(mockPayload()), 50)
+    }, 800)
+    return
+  }
+
+  if (name === 'confirm_uninstall_all') {
+    const ids = Array.isArray(params.ids) && params.ids.length
+      ? params.ids
+      : mockProducts.filter(p => p.is_installed).map(p => p.id)
+    setTimeout(() => window.pushResult('confirm_uninstall_all', { ids, ok: true }), 100)
+    return
+  }
+
+  if (name === 'uninstall_all') {
+    const ids = Array.isArray(params.ids) && params.ids.length
+      ? params.ids
+      : mockProducts.filter(p => p.is_installed).map(p => p.id)
+    setTimeout(() => {
+      ids.forEach(pid => {
+        const item = findProduct(pid)
+        if (item) {
+          item.is_installed = false
+          item.installed_version = null
+          item.has_update = false
+        }
+      })
+      window.pushResult('action_result', {
+        id: '__bulk__', action: 'uninstall_all', ok: true,
+        message: `Удалено: ${ids.length}.`
+      })
+      setTimeout(() => window.pushState(mockPayload()), 50)
+    }, 600)
+    return
+  }
+
   if (name === 'uninstall') {
     setTimeout(() => {
       if (item) {
