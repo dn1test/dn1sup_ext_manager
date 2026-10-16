@@ -31,7 +31,13 @@ module Sketchup
   module_function
   def read_default(sec, key, d = nil); $prefs.dig(sec, key) || d; end
   def write_default(sec, key, val); ($prefs[sec] ||= {})[key] = val; end
-  def require(p); Kernel.require_relative("../src/#{p}"); end
+  def require(p)
+    s = p.to_s
+    # main.rb передаёт абсолютный путь (File.dirname(__FILE__)): его нельзя
+    # клеить к базе через require_relative — грузим как есть.
+    return Kernel.require(s) if s =~ %r{\A[A-Za-z]:[\\/]} || s.start_with?('/', '\\')
+    Kernel.require_relative("../src/#{s}")
+  end
 end
 module UI
   module_function
