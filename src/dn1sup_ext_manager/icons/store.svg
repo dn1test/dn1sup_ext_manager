@@ -1,12 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
-  <!-- Задняя малая коробка -->
-  <rect x="6.4" y="5.4" width="5.6" height="6.6" fill="#36abf7" stroke="#015995" stroke-width="1"/>
-  <path d="M6.4 7.6h5.6" stroke="#015995" stroke-width="1"/>
-  <!-- Передняя малая коробка -->
-  <rect x="12" y="3.8" width="5.6" height="8.2" fill="#7cc7fb" stroke="#015995" stroke-width="1"/>
-  <path d="M12 6h5.6" stroke="#015995" stroke-width="1"/>
-  <!-- Большая коробка-лоток -->
-  <path d="M3 11.5h18l-2 9H5z" fill="#0c8ee9" stroke="#015995" stroke-width="1.2" stroke-linejoin="round"/>
-  <!-- Стрелка скачивания на борту -->
-  <path d="M12 13.5v4M10.2 15.7l1.8 1.8 1.8-1.8" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <rect width="24" height="24" rx="5.5" fill="#0c8ee9"/>
+<path d="M4 3.5h16l2 5.5H2z" fill="#ffffff"/>
+<rect x="5" y="10.5" width="14" height="10.5" fill="#ffffff"/>
+<rect x="6.8" y="11.8" width="2.8" height="2.4" fill="#0c8ee9"/>
+<rect x="14.4" y="11.8" width="2.8" height="2.4" fill="#0c8ee9"/>
+<rect x="10.2" y="15.4" width="3.6" height="5.6" fill="#0c8ee9"/>
 </svg>

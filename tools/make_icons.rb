@@ -1,9 +1,10 @@
 # frozen_string_literal: true
 # =============================================================================
-# tools/make_icons.rb — генерация иконки Extension Store для тулбара:
-#   • векторный SVG: icons/store.svg (для современных версий SketchUp);
-#   • растровые PNG: icons/store_16.png, store_24.png, store_32.png
-#   (рендеринг чистым Ruby с 4x суперсэмплингом и антиалиасингом).
+# tools/make_icons.rb — генерация плоских иконок в едином стиле «плитка»:
+#   • знак менеджера: icons/store.svg + store_16/24/32.png
+#     (PNG рендерится чистым Ruby с 4x суперсэмплингом и антиалиасингом);
+#   • плитки всех расширений каталога: frontend/src/assets/products/<id>.svg
+#     (GUI использует их вместо generic-значков lucide).
 #
 #   ruby tools/make_icons.rb
 # =============================================================================
@@ -11,20 +12,121 @@
 require 'zlib'
 require 'fileutils'
 
-SVG_CONTENT = <<~SVG
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
-    <!-- Задняя малая коробка -->
-    <rect x="6.4" y="5.4" width="5.6" height="6.6" fill="#36abf7" stroke="#015995" stroke-width="1"/>
-    <path d="M6.4 7.6h5.6" stroke="#015995" stroke-width="1"/>
-    <!-- Передняя малая коробка -->
-    <rect x="12" y="3.8" width="5.6" height="8.2" fill="#7cc7fb" stroke="#015995" stroke-width="1"/>
-    <path d="M12 6h5.6" stroke="#015995" stroke-width="1"/>
-    <!-- Большая коробка-лоток -->
-    <path d="M3 11.5h18l-2 9H5z" fill="#0c8ee9" stroke="#015995" stroke-width="1.2" stroke-linejoin="round"/>
-    <!-- Стрелка скачивания на борту -->
-    <path d="M12 13.5v4M10.2 15.7l1.8 1.8 1.8-1.8" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-  </svg>
-SVG
+# -- Единый стиль -------------------------------------------------------------
+# Сплошные заливки без обводок: белый знак на цветном скруглённом квадрате
+# (rx 5.5), сетка 24x24. Детали знака «вырезаются» цветом фона — иконка
+# одинаково читается в светлой и тёмной теме и не «мылится» в PNG 16 px.
+
+BRAND = '#0c8ee9' # фирменный синий плитки менеджера
+
+# Цвет плитки кодирует назначение и повторяет палитру списка каталога
+# (frontend/src/composables/useProductIcon.js).
+PRODUCT_TILES = {
+  'dn1sup_ext_manager'       => '#0c8ee9', # витрина каталога
+  'dn1sup_time_project'      => '#0ea5e9', # учёт времени
+  'dn1sup_create_project'    => '#10b981', # создание проекта
+  'dn1sup_comp_add_view'     => '#f59e0b', # копии компонента и проекции
+  'dn1sup_save_settings'     => '#64748b', # параметры SketchUp
+  'dn1sup_export_3d'         => '#06b6d4', # экспорт glTF/GLB
+  'dn1sup_autoselect_tag'    => '#8b5cf6', # автоназначение тегов
+  'dn1sup_export_pdf2'       => '#f43f5e', # многостраничный PDF
+  'dn1sup_sketchup_profiles' => '#6366f1'  # профили SketchUp
+}.freeze
+
+# Знаки плиток: лямбда принимает цвет фона для «вырезаемых» деталей.
+GLYPHS = {}
+
+GLYPHS['dn1sup_ext_manager'] = lambda do |c|
+  <<~G
+    <path d="M4 3.5h16l2 5.5H2z" fill="#ffffff"/>
+    <rect x="5" y="10.5" width="14" height="10.5" fill="#ffffff"/>
+    <rect x="6.8" y="11.8" width="2.8" height="2.4" fill="#{c}"/>
+    <rect x="14.4" y="11.8" width="2.8" height="2.4" fill="#{c}"/>
+    <rect x="10.2" y="15.4" width="3.6" height="5.6" fill="#{c}"/>
+  G
+end
+
+GLYPHS['dn1sup_time_project'] = lambda do |c|
+  <<~G
+    <rect x="10.7" y="2" width="2.6" height="3.2" rx="1" fill="#ffffff"/>
+    <circle cx="12" cy="14" r="7.3" fill="#ffffff"/>
+    <path d="M12 14V9.6M12 14h3.4" stroke="#{c}" stroke-width="2" stroke-linecap="round" fill="none"/>
+  G
+end
+
+GLYPHS['dn1sup_create_project'] = lambda do |c|
+  <<~G
+    <path d="M3 6.5a2 2 0 012-2h4.2l2 2H19a2 2 0 012 2V18a2 2 0 01-2 2H5a2 2 0 01-2-2z" fill="#ffffff"/>
+    <rect x="11" y="11.2" width="2" height="6.4" fill="#{c}"/>
+    <rect x="8.8" y="13.4" width="6.4" height="2" fill="#{c}"/>
+  G
+end
+
+GLYPHS['dn1sup_comp_add_view'] = lambda do |c|
+  <<~G
+    <rect x="3.5" y="3.5" width="11" height="11" rx="2" fill="#ffffff" opacity="0.55"/>
+    <rect x="9.5" y="9.5" width="11" height="11" rx="2" fill="#ffffff"/>
+    <rect x="14" y="12" width="2" height="6" fill="#{c}"/>
+    <rect x="12" y="14" width="6" height="2" fill="#{c}"/>
+  G
+end
+
+GLYPHS['dn1sup_save_settings'] = lambda do |c|
+  <<~G
+    <rect x="3" y="5.2" width="18" height="2" rx="1" fill="#ffffff"/>
+    <rect x="3" y="11" width="18" height="2" rx="1" fill="#ffffff"/>
+    <rect x="3" y="16.8" width="18" height="2" rx="1" fill="#ffffff"/>
+    <circle cx="15" cy="6.2" r="2.9" fill="#ffffff"/><circle cx="15" cy="6.2" r="1.3" fill="#{c}"/>
+    <circle cx="8.5" cy="12" r="2.9" fill="#ffffff"/><circle cx="8.5" cy="12" r="1.3" fill="#{c}"/>
+    <circle cx="16.5" cy="17.8" r="2.9" fill="#ffffff"/><circle cx="16.5" cy="17.8" r="1.3" fill="#{c}"/>
+  G
+end
+
+GLYPHS['dn1sup_export_3d'] = lambda do |_c|
+  <<~G
+    <path d="M12 2.5l8.5 4.9L12 12.3 3.5 7.4z" fill="#ffffff"/>
+    <path d="M3.5 7.4l8.5 4.9v9.2l-8.5-4.9z" fill="#ffffff" opacity="0.78"/>
+    <path d="M20.5 7.4L12 12.3v9.2l8.5-4.9z" fill="#ffffff" opacity="0.58"/>
+  G
+end
+
+GLYPHS['dn1sup_autoselect_tag'] = lambda do |c|
+  <<~G
+    <path d="M12.586 2.586A2 2 0 0011.172 2H4a2 2 0 00-2 2v7.172a2 2 0 00.586 1.414l8.704 8.704a2.426 2.426 0 003.42 0l6.586-6.586a2.426 2.426 0 000-3.42z" fill="#ffffff"/>
+    <circle cx="7.5" cy="7.5" r="1.7" fill="#{c}"/>
+    <path d="M16.2 13.2l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z" fill="#{c}"/>
+  G
+end
+
+GLYPHS['dn1sup_export_pdf2'] = lambda do |c|
+  <<~G
+    <path d="M6 2.5h7L18 7v13a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 016 20z" fill="#ffffff"/>
+    <path d="M13 2.5L18 7h-5z" fill="#{c}"/>
+    <rect x="8.5" y="10.5" width="7" height="1.7" rx="0.85" fill="#{c}"/>
+    <rect x="8.5" y="13.7" width="7" height="1.7" rx="0.85" fill="#{c}"/>
+    <rect x="8.5" y="16.9" width="4.6" height="1.7" rx="0.85" fill="#{c}"/>
+  G
+end
+
+GLYPHS['dn1sup_sketchup_profiles'] = lambda do |_c|
+  <<~G
+    <circle cx="12" cy="8" r="3.7" fill="#ffffff"/>
+    <path d="M4.5 20.5c0-3.9 3.4-6.4 7.5-6.4s7.5 2.5 7.5 6.4z" fill="#ffffff"/>
+    <circle cx="17.8" cy="7" r="3.4" fill="#ffffff" opacity="0.55"/>
+    <path d="M13.6 20.5c.3-3.3 2.9-5.4 6-5.4.8 0 1.6.15 2.3.4v4.9z" fill="#ffffff" opacity="0.55"/>
+  G
+end
+
+def tile_svg(color, glyph)
+  <<~SVG
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+      <rect width="24" height="24" rx="5.5" fill="#{color}"/>
+    #{glyph.chomp}
+    </svg>
+  SVG
+end
+
+STORE_SVG = tile_svg(BRAND, GLYPHS['dn1sup_ext_manager'].call(BRAND))
 
 # -- PNG сборщик -------------------------------------------------------------
 
@@ -130,19 +232,9 @@ def in_rounded_rect?(x, y, x0, y0, x1, y1, r)
   (x - cx)**2 + (y - cy)**2 <= r * r
 end
 
-# -- Рендеринг иконки высокого разрешения (на сетке 24 x 24) ------------------
-# Мотив: две малые коробки выглядывают из открытой большой, на борту —
-# белая стрелка скачивания. Плоские заливки шкалы brand, без градиентов.
-
-def dist_to_seg(px, py, ax, ay, bx, by)
-  dx = bx - ax
-  dy = by - ay
-  len2 = dx * dx + dy * dy
-  t = len2.zero? ? 0.0 : (((px - ax) * dx + (py - ay) * dy) / len2).clamp(0.0, 1.0)
-  cx = ax + dx * t
-  cy = ay + dy * t
-  Math.sqrt((px - cx)**2 + (py - cy)**2)
-end
+# -- Рендеринг иконки менеджера высокого разрешения (сетка 24 x 24) -----------
+# Мотив: витрина магазина — белый навес-козырёк, корпус с дверью и двумя
+# окнами на синей скруглённой плитке brand. Плоские заливки, без градиентов.
 
 def render_icon(target_size)
   scale = 4
@@ -150,65 +242,38 @@ def render_icon(target_size)
   buf = ImageBuffer.new(hires, hires)
   s = hires / 24.0
 
-  navy = [1, 89, 149] # #015995 — обводки и крышки
+  brand = [12, 142, 233] # #0c8ee9 — фон плитки и «вырезы» деталей
+  white = [255, 255, 255]
+
+  # Навес-козырёк витрины (трапеция со свесом за корпус)
+  awning = [[4.0, 3.5], [20.0, 3.5], [22.0, 9.0], [2.0, 9.0]]
 
   hires.times do |y|
     ny = y / s
     hires.times do |x|
       nx = x / s
 
-      # 1. Задняя малая коробка (6.4,5.4)-(12.0,12.0), заливка #36abf7
-      if nx >= 6.4 && nx <= 12.0 && ny >= 5.4 && ny <= 12.0
-        buf.blend_pixel(x, y, 54, 171, 247, 255)
-      end
-      # Обводка 1px: полоса между внешним и внутренним прямоугольниками
-      if nx >= 5.9 && nx <= 12.5 && ny >= 4.9 && ny <= 12.5 &&
-         !(nx > 6.9 && nx < 11.5 && ny > 5.9 && ny < 11.5)
-        buf.blend_pixel(x, y, *navy, 255)
-      end
-      # Линия крышки
-      if nx >= 6.4 && nx <= 12.0 && (ny - 7.6).abs <= 0.5
-        buf.blend_pixel(x, y, *navy, 255)
-      end
+      color = nil
+      # 1. Фон — скруглённый квадрат brand на всю канву
+      color = brand if in_rounded_rect?(nx, ny, 0.0, 0.0, 24.0, 24.0, 5.5)
+      # 2. Белый знак: козырёк и корпус витрины
+      color = white if in_poly?(awning, nx, ny)
+      color = white if nx >= 5.0 && nx <= 19.0 && ny >= 10.5 && ny <= 21.0
+      # 3. Детали цветом фона: два окна и дверь (с зазорами для 16 px)
+      color = brand if nx >= 6.8 && nx <= 9.6 && ny >= 11.8 && ny <= 14.2
+      color = brand if nx >= 14.4 && nx <= 17.2 && ny >= 11.8 && ny <= 14.2
+      color = brand if nx >= 10.2 && nx <= 13.8 && ny >= 15.4 && ny <= 21.0
 
-      # 2. Передняя малая коробка (12.0,3.8)-(17.6,12.0), заливка #7cc7fb
-      if nx >= 12.0 && nx <= 17.6 && ny >= 3.8 && ny <= 12.0
-        buf.blend_pixel(x, y, 124, 199, 251, 255)
-      end
-      if nx >= 11.5 && nx <= 18.1 && ny >= 3.3 && ny <= 12.5 &&
-         !(nx > 12.5 && nx < 17.1 && ny > 4.3 && ny < 11.5)
-        buf.blend_pixel(x, y, *navy, 255)
-      end
-      if nx >= 12.0 && nx <= 17.6 && (ny - 6.0).abs <= 0.5
-        buf.blend_pixel(x, y, *navy, 255)
-      end
-
-      # 3. Большая коробка-лоток, заливка #0c8ee9 (перекрывает низ малых)
-      tray = [[3.0, 11.5], [21.0, 11.5], [19.0, 20.5], [5.0, 20.5]]
-      if in_poly?(tray, nx, ny)
-        buf.blend_pixel(x, y, 12, 142, 233, 255)
-      end
-      # Обводка лотка 1.2px: окрестность контура
-      edges = [tray[0], tray[1], tray[2], tray[3]]
-      near = edges.each_with_index.any? do |pt, i|
-        dist_to_seg(nx, ny, pt[0], pt[1], edges[(i + 1) % 4][0], edges[(i + 1) % 4][1]) <= 0.6
-      end
-      buf.blend_pixel(x, y, *navy, 255) if near
-
-      # 4. Белая стрелка скачивания на борту
-      is_shaft = nx >= 11.1 && nx <= 12.9 && ny >= 13.5 && ny <= 17.5
-      is_head = ny >= 15.7 && ny <= 17.5 && (nx - 12.0).abs <= (17.5 - ny)
-      if is_shaft || is_head
-        buf.blend_pixel(x, y, 255, 255, 255, 255)
-      end
+      buf.blend_pixel(x, y, *color, 255) if color
     end
   end
 
   buf.downsample(scale)
 end
 
-# -- Генерация файлов в папке icons ------------------------------------------
+# -- Генерация файлов ---------------------------------------------------------
 
+# 1. Знак менеджера: SVG + PNG в src-копию (для .rbz) и dev-копию в корне
 dest_dirs = [
   File.join(__dir__, '..', 'src', 'dn1sup_ext_manager', 'icons'),
   File.join(__dir__, '..', 'icons') # dev-копия в корне репозитория
@@ -218,16 +283,24 @@ dest_dirs.each do |out|
   FileUtils.mkdir_p(out)
   puts "Генерация иконок в #{out}:"
 
-  # 1. SVG вектор
   svg_path = File.join(out, 'store.svg')
-  File.write(svg_path, SVG_CONTENT, encoding: 'UTF-8')
-  puts "  ✓ store.svg (Vector)"
+  File.write(svg_path, STORE_SVG, encoding: 'UTF-8')
+  puts '  ✓ store.svg (Vector)'
 
-  # 2. PNG размеры
   [16, 24, 32].each do |size|
     px = render_icon(size)
     write_png(File.join(out, "store_#{size}.png"), px, size, size)
   end
+end
+
+# 2. Плитки каталога для GUI (импортируются через Vite)
+products_dir = File.join(__dir__, '..', 'frontend', 'src', 'assets', 'products')
+FileUtils.mkdir_p(products_dir)
+puts "Генерация плиток каталога в #{products_dir}:"
+PRODUCT_TILES.each do |id, color|
+  path = File.join(products_dir, "#{id}.svg")
+  File.write(path, tile_svg(color, GLYPHS.fetch(id).call(color)), encoding: 'UTF-8')
+  puts "  ✓ #{id}.svg"
 end
 
 puts "\nГотово! Иконки успешно созданы."

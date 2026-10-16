@@ -2,12 +2,15 @@
   <article class="es-card relative overflow-hidden" :class="{ 'es-card-update': p.has_update || p.status === 'switch' }">
     <div class="flex items-center gap-3 px-3 py-2.5">
       <!-- Иконка -->
-      <div
-        class="w-9 h-9 rounded-lg bg-slate-100 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-700/60
-               flex items-center justify-center shrink-0"
-        :title="p.id"
-      >
-        <component :is="productIcon(p.id)" :size="18" :class="productIconClass(p.id)" />
+      <div class="w-9 h-9 flex items-center justify-center shrink-0" :title="p.id">
+        <img
+          v-if="productIconUrl(p.id)"
+          :src="productIconUrl(p.id)"
+          width="22"
+          height="22"
+          alt=""
+        />
+        <component v-else :is="productIcon(p.id)" :size="18" :class="productIconClass(p.id)" />
       </div>
 
       <!-- Информация -->
@@ -185,7 +188,7 @@ import {
 } from 'lucide-vue-next'
 import { state, install, update, checkUpdate, confirmUninstall, hide } from '../composables/useSketchupBridge'
 import { useProductStatus } from '../composables/useProductStatus'
-import { productIcon, productIconClass } from '../composables/useProductIcon'
+import { productIcon, productIconClass, productIconUrl } from '../composables/useProductIcon'
 
 const props = defineProps({ product: { type: Object, required: true } })
 const p = computed(() => props.product)
