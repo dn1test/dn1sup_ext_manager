@@ -13,29 +13,16 @@ require 'fileutils'
 
 SVG_CONTENT = <<~SVG
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
-    <defs>
-      <linearGradient id="boxLid" x1="0%" y1="0%" x2="0%" y2="100%">
-        <stop offset="0%" stop-color="#006fb8"/>
-        <stop offset="100%" stop-color="#015995"/>
-      </linearGradient>
-      <linearGradient id="boxBody" x1="0%" y1="0%" x2="0%" y2="100%">
-        <stop offset="0%" stop-color="#36abf7"/>
-        <stop offset="100%" stop-color="#0c8ee9"/>
-      </linearGradient>
-      <linearGradient id="badgeGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-        <stop offset="0%" stop-color="#22c55e"/>
-        <stop offset="100%" stop-color="#16a34a"/>
-      </linearGradient>
-    </defs>
-    <!-- Открытая крышка коробки -->
-    <path d="M2.5 8 12 3.5 21.5 8 12 12.5z" fill="url(#boxLid)"/>
-    <!-- Корпус коробки -->
-    <rect x="4" y="9.5" width="16" height="10.5" rx="1.3" fill="url(#boxBody)"/>
-    <!-- Белая лента -->
-    <rect x="10.7" y="9.5" width="2.6" height="10.5" fill="#ffffff" opacity="0.95"/>
-    <!-- Бейдж загрузки -->
-    <circle cx="17" cy="16.5" r="4.4" fill="url(#badgeGrad)"/>
-    <path d="M17 14.2v3.4M15.3 15.9 17 17.6l1.7-1.7" stroke="#ffffff" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    <!-- Задняя малая коробка -->
+    <rect x="6.4" y="5.4" width="5.6" height="6.6" fill="#36abf7" stroke="#015995" stroke-width="1"/>
+    <path d="M6.4 7.6h5.6" stroke="#015995" stroke-width="1"/>
+    <!-- Передняя малая коробка -->
+    <rect x="12" y="3.8" width="5.6" height="8.2" fill="#7cc7fb" stroke="#015995" stroke-width="1"/>
+    <path d="M12 6h5.6" stroke="#015995" stroke-width="1"/>
+    <!-- Большая коробка-лоток -->
+    <path d="M3 11.5h18l-2 9H5z" fill="#0c8ee9" stroke="#015995" stroke-width="1.2" stroke-linejoin="round"/>
+    <!-- Стрелка скачивания на борту -->
+    <path d="M12 13.5v4M10.2 15.7l1.8 1.8 1.8-1.8" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
   </svg>
 SVG
 
@@ -144,6 +131,18 @@ def in_rounded_rect?(x, y, x0, y0, x1, y1, r)
 end
 
 # -- Рендеринг иконки высокого разрешения (на сетке 24 x 24) ------------------
+# Мотив: две малые коробки выглядывают из открытой большой, на борту —
+# белая стрелка скачивания. Плоские заливки шкалы brand, без градиентов.
+
+def dist_to_seg(px, py, ax, ay, bx, by)
+  dx = bx - ax
+  dy = by - ay
+  len2 = dx * dx + dy * dy
+  t = len2.zero? ? 0.0 : (((px - ax) * dx + (py - ay) * dy) / len2).clamp(0.0, 1.0)
+  cx = ax + dx * t
+  cy = ay + dy * t
+  Math.sqrt((px - cx)**2 + (py - cy)**2)
+end
 
 def render_icon(target_size)
   scale = 4
@@ -151,42 +150,56 @@ def render_icon(target_size)
   buf = ImageBuffer.new(hires, hires)
   s = hires / 24.0
 
+  navy = [1, 89, 149] # #015995 — обводки и крышки
+
   hires.times do |y|
     ny = y / s
     hires.times do |x|
       nx = x / s
 
-      # 1. Открытая крышка коробки (ромб)
-      if in_poly?([[12.0, 3.5], [21.5, 8.0], [12.0, 12.5], [2.5, 8.0]], nx, ny)
-        t = ((ny - 3.5) / 9.0).clamp(0.0, 1.0)
-        # Градиент #006fb8 -> #015995
-        buf.blend_pixel(x, y, (0 * (1 - t) + 1 * t).round, (111 * (1 - t) + 89 * t).round, (184 * (1 - t) + 149 * t).round, 255)
+      # 1. Задняя малая коробка (6.4,5.4)-(12.0,12.0), заливка #36abf7
+      if nx >= 6.4 && nx <= 12.0 && ny >= 5.4 && ny <= 12.0
+        buf.blend_pixel(x, y, 54, 171, 247, 255)
+      end
+      # Обводка 1px: полоса между внешним и внутренним прямоугольниками
+      if nx >= 5.9 && nx <= 12.5 && ny >= 4.9 && ny <= 12.5 &&
+         !(nx > 6.9 && nx < 11.5 && ny > 5.9 && ny < 11.5)
+        buf.blend_pixel(x, y, *navy, 255)
+      end
+      # Линия крышки
+      if nx >= 6.4 && nx <= 12.0 && (ny - 7.6).abs <= 0.5
+        buf.blend_pixel(x, y, *navy, 255)
       end
 
-      # 2. Корпус коробки (скруглённый прямоугольник)
-      if in_rounded_rect?(nx, ny, 4.0, 9.5, 20.0, 20.0, 1.3)
-        t = ((ny - 9.5) / 10.5).clamp(0.0, 1.0)
-        # Градиент #36abf7 -> #0c8ee9
-        buf.blend_pixel(x, y, (54 * (1 - t) + 12 * t).round, (171 * (1 - t) + 142 * t).round, (247 * (1 - t) + 233 * t).round, 255)
+      # 2. Передняя малая коробка (12.0,3.8)-(17.6,12.0), заливка #7cc7fb
+      if nx >= 12.0 && nx <= 17.6 && ny >= 3.8 && ny <= 12.0
+        buf.blend_pixel(x, y, 124, 199, 251, 255)
+      end
+      if nx >= 11.5 && nx <= 18.1 && ny >= 3.3 && ny <= 12.5 &&
+         !(nx > 12.5 && nx < 17.1 && ny > 4.3 && ny < 11.5)
+        buf.blend_pixel(x, y, *navy, 255)
+      end
+      if nx >= 12.0 && nx <= 17.6 && (ny - 6.0).abs <= 0.5
+        buf.blend_pixel(x, y, *navy, 255)
       end
 
-      # 3. Белая лента (поверх корпуса)
-      if nx >= 10.7 && nx <= 13.3 && ny >= 9.5 && ny <= 20.0
-        buf.blend_pixel(x, y, 255, 255, 255, 242)
+      # 3. Большая коробка-лоток, заливка #0c8ee9 (перекрывает низ малых)
+      tray = [[3.0, 11.5], [21.0, 11.5], [19.0, 20.5], [5.0, 20.5]]
+      if in_poly?(tray, nx, ny)
+        buf.blend_pixel(x, y, 12, 142, 233, 255)
       end
+      # Обводка лотка 1.2px: окрестность контура
+      edges = [tray[0], tray[1], tray[2], tray[3]]
+      near = edges.each_with_index.any? do |pt, i|
+        dist_to_seg(nx, ny, pt[0], pt[1], edges[(i + 1) % 4][0], edges[(i + 1) % 4][1]) <= 0.6
+      end
+      buf.blend_pixel(x, y, *navy, 255) if near
 
-      # 4. Круглый бейдж загрузки (зелёный градиент #22c55e -> #16a34a)
-      dx = nx - 17.0
-      dy = ny - 16.5
-      if dx * dx + dy * dy <= 4.4 * 4.4
-        is_shaft = dx.abs <= 0.75 && dy >= -2.4 && dy <= 0.7
-        is_head  = dy > 0.7 && dy <= 2.7 && dx.abs <= (2.7 - dy) / 2.0 * 2.1
-        if is_shaft || is_head
-          buf.blend_pixel(x, y, 255, 255, 255, 255)
-        else
-          t = ((dy + 4.4) / 8.8).clamp(0.0, 1.0)
-          buf.blend_pixel(x, y, (34 * (1 - t) + 22 * t).round, (197 * (1 - t) + 163 * t).round, (94 * (1 - t) + 74 * t).round, 255)
-        end
+      # 4. Белая стрелка скачивания на борту
+      is_shaft = nx >= 11.1 && nx <= 12.9 && ny >= 13.5 && ny <= 17.5
+      is_head = ny >= 15.7 && ny <= 17.5 && (nx - 12.0).abs <= (17.5 - ny)
+      if is_shaft || is_head
+        buf.blend_pixel(x, y, 255, 255, 255, 255)
       end
     end
   end
