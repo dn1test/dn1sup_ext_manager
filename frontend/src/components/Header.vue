@@ -4,8 +4,15 @@
   >
     <div class="flex items-center justify-between gap-2">
     <div class="flex items-center gap-2 min-w-0">
-      <div class="w-8 h-8 rounded-lg bg-brand-500 flex items-center justify-center shrink-0">
-        <Package class="w-4 h-4 text-white" />
+      <div class="w-8 h-8 rounded-lg bg-white flex items-center justify-center shrink-0 border border-slate-200/70">
+        <svg viewBox="0 0 24 24" class="w-5 h-5" aria-hidden="true">
+          <rect x="6.4" y="5.4" width="5.6" height="6.6" fill="#36abf7" stroke="#015995" stroke-width="1"/>
+          <path d="M6.4 7.6h5.6" stroke="#015995" stroke-width="1"/>
+          <rect x="12" y="3.8" width="5.6" height="8.2" fill="#7cc7fb" stroke="#015995" stroke-width="1"/>
+          <path d="M12 6h5.6" stroke="#015995" stroke-width="1"/>
+          <path d="M3 11.5h18l-2 9H5z" fill="#0c8ee9" stroke="#015995" stroke-width="1.2" stroke-linejoin="round"/>
+          <path d="M12 13.5v4M10.2 15.7l1.8 1.8 1.8-1.8" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        </svg>
       </div>
       <div class="min-w-0">
         <div class="flex items-center gap-2">
@@ -78,7 +85,7 @@
 
 <script setup>
 import { computed } from 'vue'
-import { Package, RotateCw, Sun, Moon, Rows3, LayoutGrid, Power } from 'lucide-vue-next'
+import { RotateCw, Sun, Moon, Rows3, LayoutGrid, Power } from 'lucide-vue-next'
 import { useTheme } from '../composables/useTheme'
 
 const props = defineProps({

@@ -16,6 +16,9 @@
   (`extension.version` в лоадере) и `src/dn1sup_ext_manager/main.rb` (`VERSION`);
   при расхождении — приводит к одному значению. `registry.json` обновляется
   скриптом `tools/pack.rb` (читает версию из лоадера).
+- **Иконки:** `icons/` в корне — источник (`store.svg` + PNG 16/24/32);
+  `src/dn1sup_ext_manager/icons/` — копия для .rbz, sync вручную при смене знака.
+  Знак един для тулбара, меню (`catalog_command`) и шапки GUI (`Header.vue`).
 - **Тесты:** `ruby test/smoke_test.rb`; после изменений — коммит и push.
 - Версии других расширений DN1Sup ведутся в их собственных репозиториях —
   здесь их не дублировать.
