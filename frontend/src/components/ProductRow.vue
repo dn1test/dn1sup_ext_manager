@@ -140,14 +140,10 @@ import { productIcon, productIconClass, productIconUrl } from '../composables/us
 const props = defineProps({ product: { type: Object, required: true } })
 const p = computed(() => props.product)
 
-// Подсказка кнопки проверки: есть ли локальная папка и её версия.
-const checkUpdateTitle = computed(() => {
-  const dev = (p.value.dev_version || '').trim()
-  const base = 'Проверить обновление: сначала локальная папка разработки, потом GitHub'
-  if (p.value.dev_available && dev) return `${base} (локально: v${dev})`
-  if (p.value.dev_available) return `${base} (локальная папка найдена)`
-  return `${base} (локальной папки нет — только GitHub)`
-})
+// Подсказка кнопки проверки обновления.
+const checkUpdateTitle = computed(() =>
+  'Проверить обновление на GitHub'
+)
 
 const { statusText, statusCls, statusIcon, versionText, versionTitle } = useProductStatus(p)
 
