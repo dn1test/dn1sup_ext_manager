@@ -27,19 +27,22 @@ module Dn1sup
 
     MGR_DIR = File.dirname(__FILE__).freeze
 
-    # Индивидуальные тулбары расширений (имена из их TOOLBAR_NAME); мост
-    # тулбара не создаёт. Общая панель «DN1Sup» сюда не входит.
-    INDIVIDUAL_TOOLBARS = [
-      'DN1Sup Extension Store',
-      'DN1Sup AutoSelect Tag',
-      'DN1Sup Comp Add View',
-      'DN1Sup Create Project',
-      'Web 3D Export',
-      'DN1Sup Export PDF 2',
-      'DN1Sup Save Settings',
-      'DN1Sup SketchUp Profiles',
-      'DN1Sup Time Project'
-    ].freeze
+    # Индивидуальные тулбары расширений: имя тулбара => [id расширения,
+    # первая версия с guard «не создавать тулбар при выключенном параметре»].
+    # nil вместо пары — сам менеджер (guard в его setup_toolbar той же
+    # версии, что и эта таблица). Мост тулбара не создаёт. Общая панель
+    # «DN1Sup» сюда не входит.
+    INDIVIDUAL_TOOLBARS = {
+      'DN1Sup Extension Store'   => nil,
+      'DN1Sup AutoSelect Tag'    => ['dn1sup_autoselect_tag', '0.6.6'],
+      'DN1Sup Comp Add View'     => ['dn1sup_comp_add_view', '0.9.2'],
+      'DN1Sup Create Project'    => ['dn1sup_create_project', '0.5.7'],
+      'Web 3D Export'            => ['dn1sup_export_3d', '0.9.13'],
+      'DN1Sup Export PDF 2'      => ['dn1sup_export_pdf2', '2.21.10'],
+      'DN1Sup Save Settings'     => ['dn1sup_save_settings', '0.14.9'],
+      'DN1Sup SketchUp Profiles' => ['dn1sup_sketchup_profiles', '0.6.7'],
+      'DN1Sup Time Project'      => ['dn1sup_time_project', '0.7.9']
+    }.freeze
 
     # Кнопки: одна на расширение — главное действие. id — ключ настройки;
     # check — константа, по наличию которой определяется установленное
@@ -160,6 +163,7 @@ module Dn1sup
     # Точка входа для стартового таймера: все плагины к этому моменту
     # загружены, доступность констант актуальна.
     def startup
+      @individual_at_load = show_individual?
       build_toolbar!
       hide_individual_toolbars!
     rescue StandardError => e
@@ -199,10 +203,15 @@ module Dn1sup
     end
 
     # Переключение «показывать старые тулбары» на ходу (пункт общего меню):
-    # панели показываются/скрываются немедленно, настройка переживает рестарт.
+    # существующие панели показываются/скрываются немедленно, настройка
+    # переживает рестарт. Панели, не созданные при старте (параметр был
+    # выключен), появятся только после перезапуска SketchUp.
     def set_show_individual!(value)
       Sketchup.write_default(PREFS_SECTION, PREFS_KEY_SHOW_OLD, value ? true : false)
       apply_individual_visibility!
+      if value && @individual_at_load != true && defined?(UI) && UI.respond_to?(:messagebox)
+        UI.messagebox('Панели расширений, не созданные при старте SketchUp, появятся после перезапуска.')
+      end
       true
     rescue StandardError => e
       log(e)
@@ -268,7 +277,9 @@ module Dn1sup
       return false if show_individual?
       return false unless defined?(UI::Toolbar)
 
-      INDIVIDUAL_TOOLBARS.each do |name|
+      INDIVIDUAL_TOOLBARS.each_key do |name|
+        next unless panel_may_exist?(name)
+
         tb = UI::Toolbar.new(name)
         tb.hide if tb.respond_to?(:visible?) && tb.visible?
       end
@@ -282,9 +293,16 @@ module Dn1sup
       return false unless defined?(UI::Toolbar)
 
       if show_individual?
-        INDIVIDUAL_TOOLBARS.each do |name|
+        # Показываем только реально существующие панели с кнопками: панель,
+        # не созданная при старте (параметр был выключен), появится после
+        # перезапуска — конструировать пустую нельзя.
+        INDIVIDUAL_TOOLBARS.each_key do |name|
+          next unless panel_may_exist?(name)
+
           tb = UI::Toolbar.new(name)
-          tb.show if tb.respond_to?(:show)
+          next unless tb.respond_to?(:length) && tb.length > 0
+
+          tb.show
         end
       else
         hide_individual_toolbars!
@@ -292,6 +310,43 @@ module Dn1sup
       true
     rescue StandardError => e
       log(e)
+      false
+    end
+
+    # Может ли панель существовать в этой сессии: параметр был включён при
+    # старте (расширения создавали панели) либо установлена старая версия
+    # расширения, которая создаёт тулбар безусловно.
+    def panel_may_exist?(name)
+      return true if @individual_at_load
+
+      info = INDIVIDUAL_TOOLBARS[name]
+      return false if info.nil?
+
+      id, min_version = info
+      !version_at_least?(installed_version_of(id), min_version)
+    rescue StandardError
+      false
+    end
+
+    def installed_version_of(id)
+      return nil unless defined?(Dn1sup::ExtManager) && Dn1sup::ExtManager.respond_to?(:installed_version)
+
+      Dn1sup::ExtManager.installed_version(id)
+    rescue StandardError
+      nil
+    end
+
+    # Сравнение «X.Y.Z» по сегментам; nil/мусор — «не достигнута».
+    def version_at_least?(installed, minimum)
+      return false unless installed && minimum
+
+      a = installed.to_s.split('.').map(&:to_i)
+      b = minimum.to_s.split('.').map(&:to_i)
+      size = [a.size, b.size].max
+      a = a + [0] * (size - a.size)
+      b = b + [0] * (size - b.size)
+      (a <=> b) >= 0
+    rescue StandardError
       false
     end
 

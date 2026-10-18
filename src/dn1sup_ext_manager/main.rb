@@ -22,7 +22,7 @@ module Dn1sup
 
   module ExtManager
     ID      = 'dn1sup_ext_manager'
-    VERSION = '0.24.3'
+    VERSION = '0.25.0'
     REPO    = 'dn1test/dn1sup_ext_manager'
     ASSET   = "#{ID}.rbz"
     PAGE_URL     = "https://github.com/#{REPO}/releases"
@@ -2531,8 +2531,12 @@ module Dn1sup
     # Панель инструментов с кнопкой вызова каталога. Тулбар нельзя удалить
     # через API, поэтому кнопка создаётся один раз: после перезагрузки кода
     # UI::Toolbar.new возвращает существующую панель, а дубликаты отсекаются
-    # проверкой tooltip.
+    # проверкой tooltip. Пока работает общая панель DN1Sup (параметр
+    # «Показывать отдельные тулбары расширений» выключен), свою не создаём —
+    # тогда её нет и в списке панелей SketchUp.
     def setup_toolbar
+      return if defined?(Dn1sup::SharedToolbar) && !Dn1sup::SharedToolbar.show_individual?
+
       toolbar = UI::Toolbar.new(TOOLBAR_NAME)
       return if toolbar.any? { |c| c.respond_to?(:tooltip) && c.tooltip == CMD_TOOLTIP }
 
@@ -2556,7 +2560,7 @@ module Dn1sup
       individual_cmd = UI::Command.new('Отдельные тулбары расширений') do
         Dn1sup::SharedToolbar.set_show_individual!(!Dn1sup::SharedToolbar.show_individual?)
       end
-      individual_tip = 'DN1Sup: показывать или скрывать индивидуальные тулбары расширений (кнопки дублируются общей панелью DN1Sup)'
+      individual_tip = 'DN1Sup: когда выключено, расширения не создают свои тулбары — их нет и в списке панелей SketchUp; включённые при старте панели показываются/скрываются сразу'
       individual_cmd.menu_text = 'Показывать отдельные тулбары расширений'
       individual_cmd.tooltip = individual_tip
       individual_cmd.status_bar_text = individual_tip

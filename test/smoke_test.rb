@@ -16,7 +16,10 @@ $dialog_log = []
 $failed = 0
 
 module Sketchup
-  $prefs = { 'Dn1supUpdater' => {} } # имитация Preferences-хранилища
+  # Параметр включён: в тестах проверяется путь создания тулбара каталога
+  # (setup_toolbar), который в проде по умолчанию пропускается при активной
+  # общей панели DN1Sup.
+  $prefs = { 'Dn1supUpdater' => {}, 'DN1Sup ExtManager' => { 'shared_toolbar_show_individual' => true } }
 
   module_function
 
