@@ -41,12 +41,13 @@ module Dn1sup
       'DN1Sup Time Project'
     ].freeze
 
-    # Кнопки: id — ключ настройки; check — константа, по наличию которой
-    # определяется установленное расширение; call — действие кнопки;
-    # small/large — шаблоны иконок: абсолютные пути (иконки менеджера) или
-    # glob относительно корня Plugins (иконки самих расширений); если ничего
-    # не нашлось — фирменная плитка icons/products/<fallback_base>_<16|24>.png
-    # из папки менеджера. Второстепенные действия — default: false.
+    # Кнопки: одна на расширение — главное действие. id — ключ настройки;
+    # check — константа, по наличию которой определяется установленное
+    # расширение; call — действие кнопки; small/large — шаблоны иконок:
+    # абсолютные пути (иконки менеджера) или glob относительно корня Plugins
+    # (иконки самих расширений); если ничего не нашлось — фирменная плитка
+    # icons/products/<fallback_base>_<16|24>.png из папки менеджера
+    # (у моста плитки нет — fallback_base: nil).
     BUTTONS = [
       {
         id: 'dn1sup_ext_manager',
@@ -65,16 +66,6 @@ module Dn1sup
         default: true,
         check: 'Dn1sup::AutoSelectTag',
         call: -> { Dn1sup::AutoSelectTag::SettingsDialog.show },
-        small: ['dn1sup_autoselect_tag/**/tag.svg', 'dn1sup_autoselect_tag/**/tag_16.png'],
-        large: ['dn1sup_autoselect_tag/**/tag.svg', 'dn1sup_autoselect_tag/**/tag_24.png']
-      },
-      {
-        id: 'dn1sup_autoselect_tag__apply',
-        title: 'Применить правила тегов',
-        tooltip: 'DN1Sup AutoSelect Tag — применить правила к текущей модели',
-        default: false,
-        check: 'Dn1sup::AutoSelectTag',
-        call: -> { Dn1sup::AutoSelectTag.apply_rules_to_model },
         small: ['dn1sup_autoselect_tag/**/tag.svg', 'dn1sup_autoselect_tag/**/tag_16.png'],
         large: ['dn1sup_autoselect_tag/**/tag.svg', 'dn1sup_autoselect_tag/**/tag_24.png']
       },
@@ -117,17 +108,6 @@ module Dn1sup
         call: -> { DN1Code::ExportPdf2.open_export_dialog },
         small: ['dn1sup_export_pdf2/**/export_dialog.png', 'dn1sup_export_pdf2/**/export_dialog.svg'],
         large: ['dn1sup_export_pdf2/**/export_dialog_large.png', 'dn1sup_export_pdf2/**/export_dialog.svg']
-      },
-      {
-        id: 'dn1sup_export_pdf2__quick',
-        title: 'Быстрый экспорт PDF',
-        tooltip: 'DN1Sup Export PDF 2 — быстрый экспорт всех сцен в PDF',
-        default: false,
-        check: 'DN1Code::ExportPdf2',
-        call: -> { DN1Code::ExportPdf2.quick_export },
-        small: ['dn1sup_export_pdf2/**/quick_export.png', 'dn1sup_export_pdf2/**/quick_export.svg'],
-        large: ['dn1sup_export_pdf2/**/quick_export_large.png', 'dn1sup_export_pdf2/**/quick_export.svg'],
-        fallback_base: 'dn1sup_export_pdf2__quick_export'
       },
       {
         id: 'dn1sup_save_settings',
