@@ -396,4 +396,11 @@ GLYPHS_PDF2.each do |fn_name, ops|
   puts "  ✓ dn1sup_export_pdf2__#{fn_name}.svg + PNG 16/24/32"
 end
 
+# Копия знаков в src-папку менеджера — пакуется в .rbz: фолбэк-иконки
+# общей панели DN1Sup (dn1sup_shared_toolbar.rb).
+src_products = File.join(root, 'src', 'dn1sup_ext_manager', 'icons', 'products')
+FileUtils.mkdir_p(src_products)
+FileUtils.cp_r(Dir.children(signs_dir).map { |f| File.join(signs_dir, f) }, src_products, remove_destination: true)
+puts "Копия знаков в #{src_products}: #{Dir.children(src_products).size} файлов"
+
 puts "\nГотово! Иконки успешно созданы."

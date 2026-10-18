@@ -17,8 +17,18 @@
   при расхождении — приводит к одному значению. `registry.json` обновляется
   скриптом `tools/pack.rb` (читает версию из лоадера).
 - **Иконки:** `icons/` в корне — источник (`store.svg` + PNG 16/24/32);
-  `src/dn1sup_ext_manager/icons/` — копия для .rbz, sync вручную при смене знака.
-  Знак един для тулбара, меню (`catalog_command`) и шапки GUI (`Header.vue`).
+  `src/dn1sup_ext_manager/icons/` — копия для .rbz. Знак един для тулбара,
+  меню (`catalog_command`) и шапки GUI (`Header.vue`). Знаки продуктов из
+  `icons/products/` копируются в `src/dn1sup_ext_manager/icons/products/`
+  скриптом `tools/make_icons.rb` (фолбэк-иконки общей панели
+  `dn1sup_shared_toolbar.rb`) — ручной sync не нужен.
+- **Общая панель «DN1Sup»:** модуль `Dn1sup::SharedToolbar`
+  (`src/dn1sup_ext_manager/dn1sup_shared_toolbar.rb` + диалог
+  `html/toolbar_settings.html`). Кнопки — таблица `BUTTONS`: `check`
+  (константа установленного расширения) + `call` (его модульный метод);
+  иконки — glob в папках расширений, фолбэк — плитки `icons/products/`.
+  Удаление кнопок из тулбара SketchUp не поддерживает: включение
+  применяется сразу, отключение — после перезапуска.
 - **Тесты:** `ruby test/smoke_test.rb`; после изменений — коммит и push.
 - Версии других расширений DN1Sup ведутся в их собственных репозиториях —
   здесь их не дублировать.

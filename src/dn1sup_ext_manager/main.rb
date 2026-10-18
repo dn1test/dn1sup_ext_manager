@@ -9,6 +9,8 @@ require 'json'
 require 'fileutils'
 # Апдейтер — из папки расширения (относительный путь).
 Sketchup.require File.join(File.dirname(__FILE__), 'dn1sup_updater')
+# Общая панель инструментов DN1Sup с настройкой кнопок.
+Sketchup.require File.join(File.dirname(__FILE__), 'dn1sup_shared_toolbar')
 
 module Dn1sup
   def self.common_menu
@@ -20,7 +22,7 @@ module Dn1sup
 
   module ExtManager
     ID      = 'dn1sup_ext_manager'
-    VERSION = '0.23.0'
+    VERSION = '0.24.0'
     REPO    = 'dn1test/dn1sup_ext_manager'
     ASSET   = "#{ID}.rbz"
     PAGE_URL     = "https://github.com/#{REPO}/releases"
@@ -2567,9 +2569,14 @@ module Dn1sup
           send_products_to_dialog(force: false) if @dialog
         end
       end
+      menu.add_item('Кнопки общей панели…') { Dn1sup::SharedToolbar.open_settings_dialog }
 
       # Кнопка с иконкой на панели инструментов
       setup_toolbar
+
+      # Общая панель DN1Sup: собирается таймером, когда все расширения уже
+      # загружены (доступность кнопок — по наличию их констант).
+      UI.start_timer(15, false) { Dn1sup::SharedToolbar.startup }
 
       # Фоновая проверка обновлений менеджера при запуске (сеть в потоке,
       # результат — ненавязчивое уведомление, без модальных диалогов).
