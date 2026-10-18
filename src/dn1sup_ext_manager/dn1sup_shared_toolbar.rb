@@ -25,6 +25,15 @@ module Dn1sup
     PREFS_KEY_OFF      = 'shared_toolbar_off'
     PREFS_KEY_SHOW_OLD = 'shared_toolbar_show_individual'
 
+    # Ускоренный старт панели: состав кнопок определяется по константам
+    # других расширений (available?), поэтому панель строится не сразу при
+    # загрузке, а опросом: как только состав доступных констант стабилен
+    # STARTUP_STABLE_TICKS опросов подряд, панель собирается. Потолок
+    # STARTUP_MAX_SECONDS — страховка на медленных машинах (прежние 15 с).
+    STARTUP_POLL_INTERVAL = 0.5
+    STARTUP_STABLE_TICKS  = 2
+    STARTUP_MAX_SECONDS   = 15
+
     MGR_DIR = File.dirname(__FILE__).freeze
 
     # Индивидуальные тулбары расширений: имя тулбара => [id расширения,
@@ -157,17 +166,46 @@ module Dn1sup
 
     @built = false
     @dialog = nil
+    @startup_timer_id = nil
 
     module_function
 
-    # Точка входа для стартового таймера: все плагины к этому моменту
-    # загружены, доступность констант актуальна.
+    # Точка входа сборки панели: вызывается, когда состав доступных констант
+    # стабилен (все плагины загружены), доступность кнопок актуальна.
     def startup
       @individual_at_load = show_individual?
       build_toolbar!
       hide_individual_toolbars!
     rescue StandardError => e
       log(e)
+    end
+
+    # Стартовый опрос вместо фиксированной задержки: панели не нужно ждать
+    # STARTUP_MAX_SECONDS, если константы кнопок перестали появляться раньше.
+    def startup_when_ready
+      return if @built || @startup_timer_id
+
+      prev = nil
+      stable = 0
+      deadline = Time.now + STARTUP_MAX_SECONDS
+      @startup_timer_id = UI.start_timer(STARTUP_POLL_INTERVAL, true) do
+        ids = BUTTONS.select { |d| available?(d) }.map { |d| d.fetch(:id) }.sort
+        stable = ids == prev ? stable + 1 : 0
+        prev = ids
+        next unless stable >= STARTUP_STABLE_TICKS || Time.now >= deadline
+
+        stop_startup_timer!
+        startup
+      end
+    rescue StandardError => e
+      log(e)
+    end
+
+    def stop_startup_timer!
+      return unless @startup_timer_id
+
+      UI.stop_timer(@startup_timer_id)
+      @startup_timer_id = nil
     end
 
     # ---- Настройки ---------------------------------------------------------

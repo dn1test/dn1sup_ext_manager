@@ -1445,5 +1445,55 @@ ensure
   Dn1sup::ExtManager.instance_variable_set(:@dialog, nil)
 end
 
+# 26. Ускоренный старт общей панели: опрос констант кнопок — панель
+# собирается, как только состав доступных констант стабилен
+# STARTUP_STABLE_TICKS опросов подряд (первый тик — начальное наблюдение,
+# сборка на третьем), повторный вызов — no-op.
+begin
+  orig_start_timer26 = UI.method(:start_timer)
+  UI.define_singleton_method(:stop_timer) { |_t| true }
+  ticks = []
+  UI.define_singleton_method(:start_timer) do |interval, repeat = false, &blk|
+    ticks << [interval, repeat]
+    blk
+  end
+
+  Dn1sup::SharedToolbar.instance_variable_set(:@built, false)
+  Dn1sup::SharedToolbar.instance_variable_set(:@startup_timer_id, nil)
+
+  tick = Dn1sup::SharedToolbar.startup_when_ready
+  assert 'startup_when_ready: опрос 0.5 с повторяющийся', ticks == [[0.5, true]], ticks.inspect
+  assert 'startup_when_ready: таймер запомнен', !!Dn1sup::SharedToolbar.instance_variable_get(:@startup_timer_id)
+
+  # Тик 1: состав обнаружен (в тестовой среде доступен только менеджер) —
+  # стабильности ещё нет, панель не собирается
+  tick.call
+  assert 'опрос: после первого тика панель не собрана',
+         Dn1sup::SharedToolbar.instance_variable_get(:@built) == false
+
+  # Тик 2: состав тот же — stable 1, ещё не порог
+  tick.call
+  assert 'опрос: после второго тика панель ещё не собрана',
+         Dn1sup::SharedToolbar.instance_variable_get(:@built) == false
+
+  # Тик 3: порог стабильности достигнут — панель собрана, таймер остановлен
+  tick.call
+  assert 'опрос: стабильный состав собирает панель',
+         Dn1sup::SharedToolbar.instance_variable_get(:@built) == true
+  assert 'опрос: кнопка каталога добавлена', $dialog_log.include?('TOOLBAR_ITEM')
+  assert 'опрос: таймер остановлен',
+         Dn1sup::SharedToolbar.instance_variable_get(:@startup_timer_id).nil?
+
+  # Повторный вызов после сборки — новый таймер не стартует
+  ticks.clear
+  Dn1sup::SharedToolbar.startup_when_ready
+  assert 'startup_when_ready: после сборки — no-op', ticks.empty?, ticks.inspect
+ensure
+  UI.define_singleton_method(:start_timer, orig_start_timer26)
+  UI.singleton_class.send(:remove_method, :stop_timer) rescue nil
+  Dn1sup::SharedToolbar.instance_variable_set(:@built, false)
+  Dn1sup::SharedToolbar.instance_variable_set(:@startup_timer_id, nil)
+end
+
 puts "\n#{$failed.zero? ? 'ALL TESTS PASSED' : "#{$failed} FAILED"}"
 exit($failed.zero? ? 0 : 1)
