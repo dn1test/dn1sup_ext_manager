@@ -17,9 +17,12 @@
 module Dn1sup
   module SharedToolbar
     TOOLBAR_NAME = 'DN1Sup'
-    # Настройки — в секции менеджера, ключи отдельные.
+    # Настройки — в секции менеджера, ключи отдельные. Списки хранятся CSV
+    # (JSON-строки write_default не переживает: читаются обратно как nil),
+    # по образцу hidden_repos менеджера.
     PREFS_SECTION      = 'DN1Sup ExtManager'
-    PREFS_KEY          = 'shared_toolbar_buttons'
+    PREFS_KEY_ON       = 'shared_toolbar_on'
+    PREFS_KEY_OFF      = 'shared_toolbar_off'
     PREFS_KEY_SHOW_OLD = 'shared_toolbar_show_individual'
 
     MGR_DIR = File.dirname(__FILE__).freeze
@@ -185,25 +188,12 @@ module Dn1sup
 
     # ---- Настройки ---------------------------------------------------------
 
-    # Пользовательские переопределения: { id => true/false }, отсутствует
-    # в хэше — берётся default кнопки.
-    def settings
-      raw = Sketchup.read_default(PREFS_SECTION, PREFS_KEY)
-      h = raw.is_a?(String) ? JSON.parse(raw) : raw
-      h.is_a?(Hash) ? h : {}
-    rescue StandardError
-      {}
-    end
-
-    def show_individual?
-      val = Sketchup.read_default(PREFS_SECTION, PREFS_KEY_SHOW_OLD)
-      val.nil? ? false : (val == true || val == 'true')
-    rescue StandardError
-      false
-    end
-
+    # Пользовательские переопределения — два списка id: явно включённые и
+    # явно отключённые; id вне списков берёт default кнопки.
     def save!(enabled, show_old)
-      Sketchup.write_default(PREFS_SECTION, PREFS_KEY, JSON.generate(enabled || {}))
+      enabled ||= {}
+      write_csv(PREFS_KEY_ON,  enabled.map { |id, v| id.to_s if v == true }.compact)
+      write_csv(PREFS_KEY_OFF, enabled.map { |id, v| id.to_s if v == false }.compact)
       Sketchup.write_default(PREFS_SECTION, PREFS_KEY_SHOW_OLD, show_old ? true : false)
       apply_settings!
       apply_individual_visibility!
@@ -214,8 +204,29 @@ module Dn1sup
     end
 
     def enabled?(defn)
-      s = settings
-      s.key?(defn[:id]) ? s.fetch(defn[:id]) == true : defn.fetch(:default, false)
+      id = defn[:id].to_s
+      return false if read_csv(PREFS_KEY_OFF).include?(id)
+      return true if read_csv(PREFS_KEY_ON).include?(id)
+
+      defn.fetch(:default, false)
+    end
+
+    def show_individual?
+      val = Sketchup.read_default(PREFS_SECTION, PREFS_KEY_SHOW_OLD)
+      val.nil? ? false : (val == true || val == 'true')
+    rescue StandardError
+      false
+    end
+
+    def read_csv(key)
+      raw = Sketchup.read_default(PREFS_SECTION, key)
+      raw.is_a?(String) ? raw.split(',').map(&:to_s) : []
+    rescue StandardError
+      []
+    end
+
+    def write_csv(key, ids)
+      Sketchup.write_default(PREFS_SECTION, key, Array(ids).empty? ? nil : Array(ids).join(','))
     end
 
     def available?(defn)
