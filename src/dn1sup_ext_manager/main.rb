@@ -22,7 +22,7 @@ module Dn1sup
 
   module ExtManager
     ID      = 'dn1sup_ext_manager'
-    VERSION = '0.24.1'
+    VERSION = '0.24.2'
     REPO    = 'dn1test/dn1sup_ext_manager'
     ASSET   = "#{ID}.rbz"
     PAGE_URL     = "https://github.com/#{REPO}/releases"
@@ -2549,6 +2549,21 @@ module Dn1sup
       # Общее меню DN1Sup — синглтон в корневом модуле Dn1sup, разделяется всеми
       # расширениями DN1Sup без глобальных переменных.
       common = Dn1sup.common_menu
+
+      # Переключатель индивидуальных тулбаров: общая панель DN1Sup дублирует
+      # их кнопки, поэтому по умолчанию старые панели «DN1Sup …» скрыты.
+      # Галочка — текущее состояние; применяется немедленно.
+      individual_cmd = UI::Command.new('Отдельные тулбары расширений') do
+        Dn1sup::SharedToolbar.set_show_individual!(!Dn1sup::SharedToolbar.show_individual?)
+      end
+      individual_tip = 'DN1Sup: показывать или скрывать индивидуальные тулбары расширений (кнопки дублируются общей панелью DN1Sup)'
+      individual_cmd.menu_text = 'Показывать отдельные тулбары расширений'
+      individual_cmd.tooltip = individual_tip
+      individual_cmd.status_bar_text = individual_tip
+      individual_cmd.set_validation_proc do
+        Dn1sup::SharedToolbar.show_individual? ? MF_CHECKED : MF_UNCHECKED
+      end if individual_cmd.respond_to?(:set_validation_proc)
+      common.add_item(individual_cmd)
 
       # Пункты расширения — в подменю «Extension Store» внутри DN1Sup
       menu = common.add_submenu('Extension Store')

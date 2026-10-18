@@ -218,6 +218,17 @@ module Dn1sup
       false
     end
 
+    # Переключение «показывать старые тулбары» на ходу (пункт общего меню):
+    # панели показываются/скрываются немедленно, настройка переживает рестарт.
+    def set_show_individual!(value)
+      Sketchup.write_default(PREFS_SECTION, PREFS_KEY_SHOW_OLD, value ? true : false)
+      apply_individual_visibility!
+      true
+    rescue StandardError => e
+      log(e)
+      false
+    end
+
     def read_csv(key)
       raw = Sketchup.read_default(PREFS_SECTION, key)
       raw.is_a?(String) ? raw.split(',').map(&:to_s) : []
