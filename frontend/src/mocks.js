@@ -78,7 +78,15 @@ export function mockPayload() {
   return {
     version: '0.5.0-mock',
     products: mockProducts,
-    sync: { fetching: false, fetched: mockProducts.length, total: mockProducts.length, failed: [], checked_at: Date.now() / 1000 | 0, snapshot_saved_at: 0, first_scan: false }
+    sync: { fetching: false, fetched: mockProducts.length, total: mockProducts.length, failed: [], checked_at: Date.now() / 1000 | 0, snapshot_saved_at: 0, first_scan: false },
+    menu: {
+      menus: [
+        { id: 'menu_my', title: 'Моё меню', items: ['demo_extension_one', '__sep__', 'demo_extension_two'] }
+      ],
+      commands: mockProducts.map(p => ({
+        id: p.id, title: p.name, tooltip: p.description, available: p.is_installed
+      }))
+    }
   }
 }
 

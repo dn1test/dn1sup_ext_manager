@@ -11,6 +11,8 @@ require 'fileutils'
 Sketchup.require File.join(File.dirname(__FILE__), 'dn1sup_updater')
 # Общая панель инструментов DN1Sup с настройкой кнопок.
 Sketchup.require File.join(File.dirname(__FILE__), 'dn1sup_shared_toolbar')
+# Настраиваемые меню DN1Sup (конструктор в Store-диалоге).
+Sketchup.require File.join(File.dirname(__FILE__), 'dn1sup_shared_menu')
 
 module Dn1sup
   def self.common_menu
@@ -22,7 +24,7 @@ module Dn1sup
 
   module ExtManager
     ID      = 'dn1sup_ext_manager'
-    VERSION = '0.26.0'
+    VERSION = '0.27.0'
     REPO    = 'dn1test/dn1sup_ext_manager'
     ASSET   = "#{ID}.rbz"
     PAGE_URL     = "https://github.com/#{REPO}/releases"
@@ -1867,7 +1869,8 @@ module Dn1sup
       payload = {
         'version'   => VERSION,
         'products'  => products.is_a?(Array) ? products : [],
-        'sync'      => sync_payload
+        'sync'      => sync_payload,
+        'menu'      => (defined?(Dn1sup::SharedMenu) ? Dn1sup::SharedMenu.menu_payload : { 'menus' => [], 'commands' => [] })
       }
       dlg.execute_script("window.pushState(#{JSON.generate(payload)});")
     rescue StandardError => e
@@ -2006,6 +2009,21 @@ module Dn1sup
         repo = parse_json(param)['repo']
         hide_repo(repo)
         store_log("скрыт найденный репозиторий #{repo}")
+        send_products_to_dialog(force: false)
+      when 'save_menu_config'
+        data = parse_json(param)
+        ok = defined?(Dn1sup::SharedMenu) ? Dn1sup::SharedMenu.save_config(data) : false
+        store_log(ok ? 'конфиг меню DN1Sup сохранён' : 'не удалось сохранить конфиг меню DN1Sup')
+        notify_action_result('__menu__', 'save_menu_config',
+                             ok ? { 'ok' => true, 'message' => 'Меню сохранено. Новые пункты появятся после перезапуска SketchUp.' }
+                                : { 'ok' => false, 'error' => 'Не удалось сохранить меню.' })
+        send_products_to_dialog(force: false)
+      when 'reset_menu_config'
+        ok = defined?(Dn1sup::SharedMenu) ? Dn1sup::SharedMenu.reset_config : false
+        store_log('конфиг меню DN1Sup сброшен')
+        notify_action_result('__menu__', 'reset_menu_config',
+                             ok ? { 'ok' => true, 'message' => 'Меню сброшено. Изменения вступят после перезапуска SketchUp.' }
+                                : { 'ok' => false, 'error' => 'Не удалось сбросить меню.' })
         send_products_to_dialog(force: false)
       when 'confirm_restart'
         # Новая несохранённая сцена: сначала Да/Нет/Отмена про сохранение.
@@ -2596,6 +2614,10 @@ module Dn1sup
       # Общая панель DN1Sup: собирается опросом, как только состав доступных
       # констант кнопок стабилен (обычно ~1 с после старта); потолок — 15 с.
       Dn1sup::SharedToolbar.startup_when_ready
+
+      # Кастомные меню DN1Sup из Store-диалога: тот же опрос готовности,
+      # применяются при старте (в рантайме пункты меню удалить нельзя).
+      Dn1sup::SharedMenu.startup_when_ready if defined?(Dn1sup::SharedMenu)
 
       # Фоновая проверка обновлений менеджера при запуске (сеть в потоке,
       # результат — ненавязчивое уведомление, без модальных диалогов).

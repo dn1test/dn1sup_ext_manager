@@ -31,8 +31,28 @@
       <div class="text-[11px] tabular-nums text-slate-400 dark:text-slate-500">{{ firstScanText }}</div>
     </div>
 
+    <!-- Верхняя навигация Store -->
+    <div class="px-3.5 pt-2 shrink-0">
+      <nav class="flex gap-0.5 bg-slate-200/60 dark:bg-slate-900 rounded-lg p-0.5">
+        <button
+          class="flex-1 px-2 py-1 rounded-md text-xs font-medium transition-colors"
+          :class="mainTab === 'catalog'
+            ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm'
+            : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'"
+          @click="mainTab = 'catalog'"
+        >Каталог</button>
+        <button
+          class="flex-1 px-2 py-1 rounded-md text-xs font-medium transition-colors"
+          :class="mainTab === 'menu'
+            ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm'
+            : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'"
+          @click="mainTab = 'menu'"
+        >Меню<span v-if="state.menu && state.menu.menus && state.menu.menus.length" class="ml-1 px-1.5 py-px rounded-full text-[10px] bg-brand-100 dark:bg-brand-900/60">{{ state.menu.menus.length }}</span></button>
+      </nav>
+    </div>
+
     <!-- Поиск и массовые действия -->
-    <div class="px-3.5 pt-2 pb-2 flex items-center gap-2 shrink-0">
+    <div v-if="mainTab === 'catalog'" class="px-3.5 pt-2 pb-2 flex items-center gap-2 shrink-0">
       <div class="relative flex-1 min-w-[160px]">
         <Search class="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 dark:text-slate-500 pointer-events-none" />
         <input
@@ -71,7 +91,7 @@
 
     <!-- Прогресс массовой установки/удаления -->
     <div
-      v-if="state.bulk"
+      v-if="mainTab === 'catalog' && state.bulk"
       class="mx-3.5 mb-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-2.5 py-2 shrink-0"
     >
       <div class="flex items-center gap-2 text-xs font-medium">
@@ -107,7 +127,7 @@
     </div>
 
     <!-- Каталог -->
-    <main class="flex-1 min-h-0 overflow-y-auto px-3.5 pb-5 space-y-2">
+    <main v-if="mainTab === 'catalog'" class="flex-1 min-h-0 overflow-y-auto px-3.5 pb-5 space-y-2">
       <template v-if="view === 'cards'">
         <ProductCard
           v-for="p in filteredProducts"
@@ -157,6 +177,11 @@
       </div>
     </main>
 
+    <!-- Конструктор меню DN1Sup -->
+    <div v-else class="flex-1 min-h-0 flex flex-col pt-2 overflow-hidden">
+      <MenuBuilder />
+    </div>
+
     <!-- Подвал: состояние моста -->
     <footer
       class="px-3.5 py-1.5 bg-white/70 dark:bg-slate-900/70 border-t border-slate-200/70 dark:border-slate-800/70
@@ -200,10 +225,14 @@ import { Search, SearchX, Loader2, Hourglass, RotateCw, CheckCircle2, AlertCircl
 import Header from './components/Header.vue'
 import ProductCard from './components/ProductCard.vue'
 import ProductRow from './components/ProductRow.vue'
+import MenuBuilder from './components/MenuBuilder.vue'
 import { state, refresh, loadState, toast, installAll, confirmUninstallAll, confirmRestart } from './composables/useSketchupBridge'
 import { useTheme } from './composables/useTheme'
 
 useTheme()
+
+// -- верхняя навигация Store: каталог / конструктор меню DN1Sup ---------------
+const mainTab = ref('catalog')
 
 // -- вид каталога (карточки / список) --------------------------------------------
 

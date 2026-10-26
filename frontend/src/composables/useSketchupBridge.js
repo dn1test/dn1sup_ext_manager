@@ -28,6 +28,7 @@ const state = reactive({
   version: '…',
   products: [],  // [{id,name,description,author,repo,asset,discovered,installed_version,is_installed,latest_version,has_update,has_asset,status,changelog,commits,release_url,published_at}]
   sync: { fetching: false, fetched: 0, total: 0, failed: [], checked_at: 0, snapshot_saved_at: 0, first_scan: false },
+  menu: { menus: [], commands: [] }, // конструктор меню DN1Sup: [{id,title,items:[cmdId|'__sep__']}], commands из BUTTONS
   busy: null,    // { id, action, text } — длительная операция над карточкой
   toast: null,   // { kind: 'ok' | 'err' | 'info', text }
   bulk: null     // { action, current, total, done: [{id,name}], failed: [{id,name}] } — прогресс «установить/удалить все»
@@ -71,6 +72,12 @@ if (typeof window !== 'undefined') {
         checked_at: Number(payload.sync.checked_at) || 0,
         snapshot_saved_at: Number(payload.sync.snapshot_saved_at) || 0,
         first_scan: !!payload.sync.first_scan
+      }
+    }
+    if (payload.menu && typeof payload.menu === 'object') {
+      state.menu = {
+        menus: Array.isArray(payload.menu.menus) ? payload.menu.menus : [],
+        commands: Array.isArray(payload.menu.commands) ? payload.menu.commands : []
       }
     }
     clearBusy(null)
@@ -228,6 +235,29 @@ export function update(id) {
   }
   state.busy = { id, action: 'update', text: 'Обновление…' }
   callRubyJson('update', { id })
+}
+
+/** Сохранение конструктора меню DN1Sup: [{id,title,items}]. Применяется после рестарта SketchUp. */
+export function saveMenuConfig(menus) {
+  const list = Array.isArray(menus) ? menus : []
+  if (isMock) {
+    state.menu.menus = JSON.parse(JSON.stringify(list))
+    toast('ok', 'Меню сохранено (демо-режим). В SketchUp пункты появятся после перезапуска.')
+    return
+  }
+  state.busy = { id: '__menu__', action: 'save_menu_config', text: 'Сохранение меню…' }
+  callRubyJson('save_menu_config', { menus: list })
+}
+
+/** Сброс конструктора меню к пустому состоянию. */
+export function resetMenuConfig() {
+  if (isMock) {
+    state.menu.menus = []
+    toast('ok', 'Меню сброшено (демо-режим).')
+    return
+  }
+  state.busy = { id: '__menu__', action: 'reset_menu_config', text: 'Сброс меню…' }
+  callRuby('reset_menu_config')
 }
 
 /** Проверка обновления: сначала локальная папка разработки, потом GitHub. */

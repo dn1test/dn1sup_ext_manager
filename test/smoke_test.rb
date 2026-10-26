@@ -1495,5 +1495,82 @@ ensure
   Dn1sup::SharedToolbar.instance_variable_set(:@startup_timer_id, nil)
 end
 
+# 27. Конструктор меню DN1Sup: sanitize, save/load, dispatch, build
+begin
+  assert 'SharedMenu загружен', defined?(Dn1sup::SharedMenu)
+
+  # sanitize: неизвестные id отфильтровываются, разделители чистятся
+  clean = Dn1sup::SharedMenu.sanitize_menus([
+    { 'title' => '  Моё меню ', 'items' => %w[dn1sup_ext_manager no_such_cmd __sep__ __sep__] },
+    { 'title' => '   ', 'items' => %w[dn1sup_ext_manager] },
+    { 'title' => 'Сепы', 'items' => %w[__sep__ dn1sup_ext_manager __sep__] }
+  ])
+  assert 'sanitize: пустое название отброшено', clean.size == 2, clean.inspect
+  assert 'sanitize: неизвестный id отфильтрован, дубли/край сепов схлопнуты',
+         clean[0]['items'] == %w[dn1sup_ext_manager], clean[0].inspect
+  assert 'sanitize: краевые сепы подрезаны', clean[1]['items'] == %w[dn1sup_ext_manager], clean[1].inspect
+  assert 'sanitize: лимит меню', Dn1sup::SharedMenu.sanitize_menus(Array.new(20) { { 'title' => 'm', 'items' => %w[dn1sup_ext_manager] } }).size == 10
+
+  # save/load roundtrip (бэкап живого конфига)
+  cfg_path = Dn1sup::SharedMenu::CONFIG_PATH
+  had_cfg = File.file?(cfg_path) ? File.read(cfg_path, encoding: 'UTF-8') : nil
+  begin
+    ok = Dn1sup::SharedMenu.save_config('menus' => [{ 'title' => 'Тест', 'items' => %w[dn1sup_ext_manager __sep__ dn1sup_ext_manager] }])
+    assert 'save_config пишет файл', ok && File.file?(cfg_path)
+    loaded = Dn1sup::SharedMenu.load_config
+    assert 'load_config читает меню', loaded['menus'].size == 1 && loaded['menus'][0]['title'] == 'Тест', loaded.inspect
+    assert 'load_config: дубли команды в меню сохранены', loaded['menus'][0]['items'].count('dn1sup_ext_manager') == 2
+
+    payload = Dn1sup::SharedMenu.menu_payload
+    assert 'menu_payload: menus + commands', payload['menus'].is_a?(Array) && payload['commands'].is_a?(Array)
+    assert 'menu_payload: есть команда менеджера',
+           payload['commands'].any? { |c| c['id'] == 'dn1sup_ext_manager' }, payload['commands'].map { |c| c['id'] }.inspect
+
+    # dispatch через диалог: save + reset
+    menu_dlg = FakeStoreDialog.new
+    Dn1sup::ExtManager.instance_variable_set(:@dialog, menu_dlg)
+    entries = Dn1sup::ExtManager.load_registry
+    Dn1sup::ExtManager.instance_variable_set(
+      :@release_cache,
+      entries.each_with_object({}) { |e, h| h[e['repo'].to_s] = { 'tag_name' => 'v9.9.9' } }
+    )
+    Sketchup.write_default('DN1Sup ExtManager', 'last_discovery', Time.now.to_i)
+    orig_st = UI.method(:start_timer)
+    UI.define_singleton_method(:start_timer) { |_i, _r = false, &blk| blk&.call(:timer) }
+    UI.define_singleton_method(:stop_timer) { |_t| true }
+    begin
+      menu_dlg.scripts.clear
+      Dn1sup::ExtManager.dispatch(menu_dlg, 'save_menu_config', JSON.generate('menus' => [{ 'title' => 'Из диалога', 'items' => %w[dn1sup_ext_manager] }]))
+      res_script = menu_dlg.scripts.grep(/window\.pushResult\(/).last
+      assert 'dispatch save_menu_config -> ok:true', !!res_script && res_script.include?('true'), res_script.to_s[0, 160]
+      assert 'dispatch save_menu_config -> pushState с меню',
+             menu_dlg.scripts.grep(/\Awindow\.pushState\(/).last.to_s.include?('"menu"')
+
+      Dn1sup::SharedMenu.instance_variable_set(:@built, false)
+      assert 'build_menus! собирает кастомное меню', Dn1sup::SharedMenu.build_menus! == true
+      assert 'build_menus!: повторный вызов no-op', Dn1sup::SharedMenu.build_menus! == false
+
+      menu_dlg.scripts.clear
+      Dn1sup::ExtManager.dispatch(menu_dlg, 'reset_menu_config', '')
+      assert 'dispatch reset_menu_config удаляет файл', !File.file?(cfg_path)
+    ensure
+      UI.define_singleton_method(:start_timer, orig_st)
+      UI.singleton_class.send(:remove_method, :stop_timer) rescue nil
+      Dn1sup::ExtManager.instance_variable_set(:@dialog, nil)
+      Dn1sup::ExtManager.instance_variable_set(:@release_cache, {})
+      Dn1sup::ExtManager.instance_variable_set(:@fetching, false)
+      Dn1sup::ExtManager.instance_variable_set(:@pending_force, false)
+    end
+  ensure
+    if had_cfg
+      File.write(cfg_path, had_cfg)
+    else
+      FileUtils.rm_f(cfg_path)
+    end
+    Dn1sup::SharedMenu.instance_variable_set(:@built, false)
+    Dn1sup::SharedMenu.instance_variable_set(:@startup_timer_id, nil)
+  end
+end
+
 puts "\n#{$failed.zero? ? 'ALL TESTS PASSED' : "#{$failed} FAILED"}"
 exit($failed.zero? ? 0 : 1)
