@@ -11,16 +11,8 @@ require 'fileutils'
 Sketchup.require File.join(File.dirname(__FILE__), 'dn1sup_updater')
 # Общая панель инструментов DN1Sup с настройкой кнопок.
 Sketchup.require File.join(File.dirname(__FILE__), 'dn1sup_shared_toolbar')
-# Настраиваемые меню DN1Sup (конструктор в Store-диалоге).
-Sketchup.require File.join(File.dirname(__FILE__), 'dn1sup_shared_menu')
 
 module Dn1sup
-  def self.common_menu
-    @common_menu ||= begin
-      legacy = (defined?($dn1sup_common_menu) && $dn1sup_common_menu) || (defined?($dn1sup_menu) && $dn1sup_menu)
-      legacy || UI.menu('Extensions').add_submenu('DN1Sup')
-    end
-  end
 
   module ExtManager
     ID      = 'dn1sup_ext_manager'
@@ -1869,8 +1861,7 @@ module Dn1sup
       payload = {
         'version'   => VERSION,
         'products'  => products.is_a?(Array) ? products : [],
-        'sync'      => sync_payload,
-        'menu'      => (defined?(Dn1sup::SharedMenu) ? Dn1sup::SharedMenu.menu_payload : { 'menus' => [], 'commands' => [] })
+        'sync'      => sync_payload
       }
       dlg.execute_script("window.pushState(#{JSON.generate(payload)});")
     rescue StandardError => e
@@ -2009,21 +2000,6 @@ module Dn1sup
         repo = parse_json(param)['repo']
         hide_repo(repo)
         store_log("скрыт найденный репозиторий #{repo}")
-        send_products_to_dialog(force: false)
-      when 'save_menu_config'
-        data = parse_json(param)
-        ok = defined?(Dn1sup::SharedMenu) ? Dn1sup::SharedMenu.save_config(data) : false
-        store_log(ok ? 'конфиг меню DN1Sup сохранён' : 'не удалось сохранить конфиг меню DN1Sup')
-        notify_action_result('__menu__', 'save_menu_config',
-                             ok ? { 'ok' => true, 'message' => 'Меню сохранено. Новые пункты появятся после перезапуска SketchUp.' }
-                                : { 'ok' => false, 'error' => 'Не удалось сохранить меню.' })
-        send_products_to_dialog(force: false)
-      when 'reset_menu_config'
-        ok = defined?(Dn1sup::SharedMenu) ? Dn1sup::SharedMenu.reset_config : false
-        store_log('конфиг меню DN1Sup сброшен')
-        notify_action_result('__menu__', 'reset_menu_config',
-                             ok ? { 'ok' => true, 'message' => 'Меню сброшено. Изменения вступят после перезапуска SketchUp.' }
-                                : { 'ok' => false, 'error' => 'Не удалось сбросить меню.' })
         send_products_to_dialog(force: false)
       when 'confirm_restart'
         # Новая несохранённая сцена: сначала Да/Нет/Отмена про сохранение.
@@ -2568,27 +2544,9 @@ module Dn1sup
     end
 
     unless file_loaded?(__FILE__)
-      # Общее меню DN1Sup — синглтон в корневом модуле Dn1sup, разделяется всеми
-      # расширениями DN1Sup без глобальных переменных.
-      common = Dn1sup.common_menu
-
-      # Переключатель индивидуальных тулбаров: общая панель DN1Sup дублирует
-      # их кнопки, поэтому по умолчанию старые панели «DN1Sup …» скрыты.
-      # Галочка — текущее состояние; применяется немедленно.
-      individual_cmd = UI::Command.new('Отдельные тулбары расширений') do
-        Dn1sup::SharedToolbar.set_show_individual!(!Dn1sup::SharedToolbar.show_individual?)
-      end
-      individual_tip = 'DN1Sup: когда выключено, расширения не создают свои тулбары — их нет и в списке панелей SketchUp; включённые при старте панели показываются/скрываются сразу'
-      individual_cmd.menu_text = 'Показывать отдельные тулбары расширений'
-      individual_cmd.tooltip = individual_tip
-      individual_cmd.status_bar_text = individual_tip
-      individual_cmd.set_validation_proc do
-        Dn1sup::SharedToolbar.show_individual? ? MF_CHECKED : MF_UNCHECKED
-      end if individual_cmd.respond_to?(:set_validation_proc)
-      common.add_item(individual_cmd)
-
-      # Пункты расширения — в подменю «Extension Store» внутри DN1Sup
-      menu = common.add_submenu('Extension Store')
+      # Собственное меню менеджера в Extensions (без общего меню DN1Sup):
+      # каждое расширение DN1Sup создаёт свой пункт самостоятельно.
+      menu = UI.menu('Extensions').add_submenu('Extension Store')
       menu.add_item(catalog_command)
       menu.add_item('Проверить обновления') do
         open_store
@@ -2614,10 +2572,6 @@ module Dn1sup
       # Общая панель DN1Sup: собирается опросом, как только состав доступных
       # констант кнопок стабилен (обычно ~1 с после старта); потолок — 15 с.
       Dn1sup::SharedToolbar.startup_when_ready
-
-      # Кастомные меню DN1Sup из Store-диалога: тот же опрос готовности,
-      # применяются при старте (в рантайме пункты меню удалить нельзя).
-      Dn1sup::SharedMenu.startup_when_ready if defined?(Dn1sup::SharedMenu)
 
       # Фоновая проверка обновлений менеджера при запуске (сеть в потоке,
       # результат — ненавязчивое уведомление, без модальных диалогов).
