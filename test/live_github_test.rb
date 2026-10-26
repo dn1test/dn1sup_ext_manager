@@ -5,10 +5,10 @@ require 'net/http'
 require 'json'
 require 'tmpdir'
 
-REPO = 'dn1test/dn1sup_ext_manager'
+REPO = 'dn1test/dn1sup_extension_store'
 OWNER = 'dn1test'
 CATALOG_IDS = %w[
-  dn1sup_ext_manager
+  dn1sup_extension_store
   dn1sup_time_project
   dn1sup_create_project
   dn1sup_autoselect_tag
@@ -68,7 +68,7 @@ def file_loaded?(_); false; end
 def file_loaded(_); true; end
 
 require_relative '../shared/dn1sup_updater'
-require_relative '../src/dn1sup_ext_manager/main'
+require_relative '../src/dn1sup_extension_store/main'
 
 # 1. Реестр каталога на GitHub (первичный список расширений)
 raw_reg = Dn1sup::Updater.fetch_text("https://raw.githubusercontent.com/#{REPO}/main/registry.json")
@@ -143,9 +143,9 @@ else
   assert 'compare_commits: у репозитория есть минимум 2 тега', false, tags.join(', ')
 end
 
-# 7. ExtManager::load_registry
-loaded_reg = Dn1sup::ExtManager.load_registry
-assert 'ExtManager успешно загружает реестр', loaded_reg.is_a?(Array) && loaded_reg.size >= CATALOG_IDS.size - 1
+# 7. ExtensionStore::load_registry
+loaded_reg = Dn1sup::ExtensionStore.load_registry
+assert 'ExtensionStore успешно загружает реестр', loaded_reg.is_a?(Array) && loaded_reg.size >= CATALOG_IDS.size - 1
 
 puts "\n#{$failed.zero? ? 'ВСЕ ЖИВЫЕ ТЕСТЫ С GITHUB УСПЕШНО ПРОЙДЕНЫ!' : "#{$failed} ТЕСТОВ ПРОВАЛЕНО"}"
 exit($failed.zero? ? 0 : 1)

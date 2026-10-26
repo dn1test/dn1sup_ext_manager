@@ -51,25 +51,25 @@ def file_loaded?(_); false; end
 def file_loaded(_); true; end
 
 require_relative '../shared/dn1sup_updater'
-require_relative '../src/dn1sup_ext_manager/main'
+require_relative '../src/dn1sup_extension_store/main'
 
 # Если аргумент PROVE_NEW — сужаем реестр в памяти до одного расширения,
 # чтобы автопоиск «увидел» остальные репозитории аккаунта как новые.
 if ARGV.include?('PROVE_NEW')
-  Dn1sup::ExtManager.define_singleton_method(:load_registry) do
-    [{ 'id' => 'dn1sup_ext_manager', 'name' => 'DN1Sup Extension Store', 'repo' => 'dn1test/dn1sup_ext_manager' }]
+  Dn1sup::ExtensionStore.define_singleton_method(:load_registry) do
+    [{ 'id' => 'dn1sup_extension_store', 'name' => 'DN1Sup Extension Store', 'repo' => 'dn1test/dn1sup_extension_store' }]
   end
 end
 
-found = Dn1sup::ExtManager.discover_repos
+found = Dn1sup::ExtensionStore.discover_repos
 puts "автопоиск нашёл новых репозиториев: #{found.size}"
 found.each { |e| puts "  - #{e['id']} (#{e['repo']})" }
-Dn1sup::ExtManager.instance_variable_set(:@discovered_entries, found)
+Dn1sup::ExtensionStore.instance_variable_set(:@discovered_entries, found)
 
-repos = Dn1sup::ExtManager.merged_entries.map { |e| e['repo'] }.uniq
+repos = Dn1sup::ExtensionStore.merged_entries.map { |e| e['repo'] }.uniq
 puts "репозиториев для опроса релизов: #{repos.size}"
-repos.each { |r| Dn1sup::ExtManager.releases_list(r) }
-prods = Dn1sup::ExtManager.collect_products_data(false, check_releases: false)
+repos.each { |r| Dn1sup::ExtensionStore.releases_list(r) }
+prods = Dn1sup::ExtensionStore.collect_products_data(false, check_releases: false)
 puts "продуктов в каталоге: #{prods.size}"
 prods.each do |p|
   inst = p['installed_version'].to_s.empty? ? '-' : p['installed_version']
@@ -78,6 +78,6 @@ prods.each do |p|
 end
 
 # Скрытие + снапшот по-настоящему
-Dn1sup::ExtManager.save_release_snapshot
-snap = JSON.parse(File.read(Dn1sup::ExtManager.snapshot_path))
+Dn1sup::ExtensionStore.save_release_snapshot
+snap = JSON.parse(File.read(Dn1sup::ExtensionStore.snapshot_path))
 puts "снапшот: v#{snap['version']}, релизов: #{snap['releases'].size}, discovered: #{snap['discovered'].size}"

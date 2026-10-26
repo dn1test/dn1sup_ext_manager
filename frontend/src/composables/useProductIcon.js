@@ -6,7 +6,7 @@ import { Puzzle } from 'lucide-vue-next'
 // id, без совпадений — общий пазл (например, для расширений, найденных на
 // GitHub вне реестра). Порядок правил не менять: подбор по подстрокам
 // должен отрабатывать от частного к общему.
-import managerSvg from '../assets/products/dn1sup_ext_manager.svg'
+import managerSvg from '../assets/products/dn1sup_extension_store.svg'
 import timeSvg from '../assets/products/dn1sup_time_project.svg'
 import createSvg from '../assets/products/dn1sup_create_project.svg'
 import copiesSvg from '../assets/products/dn1sup_comp_add_view.svg'

@@ -1,11 +1,26 @@
 # Changelog (Лог изменений)
 
-Лог изменений **DN1Sup Extension Store** (`dn1sup_ext_manager`).
+Лог изменений **DN1Sup Extension Store** (`dn1sup_extension_store`).
 Формат версий соответствует правилам `MAJOR.MINOR.PATCH`.
 
 Изменения остальных расширений DN1Sup документируются в их собственных
 репозиториях (`dn1test/dn1sup_*`); этот репозиторий хранит только реестр
 каталога (`registry.json`: id/name/repo), необходимый для установки и обновлений.
+
+## [Unreleased]
+
+### DN1Sup Extension Store — переименование id
+- **Id `dn1sup_ext_manager` → `dn1sup_extension_store`.** Переименованы файлы
+  (`src/dn1sup_extension_store.rb`, `src/dn1sup_extension_store/`), модуль
+  `Dn1sup::ExtManager` → `Dn1sup::ExtensionStore`, секция настроек
+  `DN1Sup ExtensionStore`, иконки, реестр и CI-артефакт
+  (`packages/dn1sup_extension_store.rbz`).
+- Требуется ручной шаг: переименовать репозиторий на GitHub
+  `dn1test/dn1sup_ext_manager` → `dn1test/dn1sup_extension_store`, иначе
+  `REGISTRY_URL`/живые тесты указывают в 404.
+- Совместимость: алиас `Dn1sup::ExtManager`, чтение настроек со fallback
+  на старую секцию, предупреждение об устаревшем `dn1sup_ext_manager.rb`
+  в Plugins.
 
 ## [0.29.1] — 2026-10-26
 
@@ -209,7 +224,7 @@
 
 ### DN1Sup Extension Store (v0.22.8)
 - **Лоадер не роняет старт при битом профиле.**
-  Если папки `dn1sup_ext_manager` с `main.rb` нет в Plugins (частично
+  Если папки `dn1sup_extension_store` с `main.rb` нет в Plugins (частично
   отзеркаленный профиль), регистрация пропускается с предупреждением
   в консоли Ruby вместо модальной ошибки «Failed to load file».
 
@@ -410,10 +425,10 @@
 
 ### DN1Sup Extension Store (v0.15.0)
 - **Удалён функционал dev/prod (второй id).** Расширение существует в
-  единственном экземпляре (`dn1sup_ext_manager`, без `<id>_dev`-двойника):
+  единственном экземпляре (`dn1sup_extension_store`, без `<id>_dev`-двойника):
   удалены `deactivate_dev_twin`, флаг `dev_replaced`, `DEV_BUILD` и бейдж DEV
   в шапке каталога, поле `dev_build` в `push_state`. Разработка ведётся в
-  рабочей копии под тем же id с перезагрузкой `Dn1sup::ExtManager.reload`;
+  рабочей копии под тем же id с перезагрузкой `Dn1sup::ExtensionStore.reload`;
   прод-сборка проверяется установкой `.rbz` из `packages/`.
 - **Self-update рабочей копии отключён по пути загрузки**
   (`Dn1sup::Updater.dev_source?` вместо `dev_install?`): код вне папки
@@ -516,7 +531,7 @@
 - **Активный канал** определяется по `source_location` методов неймспейса,
   сессионному журналу `$dn1sup_active_channels` и путям в
   `$LOADED_FEATURES`. Выбор пользователя сохраняется в pref
-  (`DN1Sup ExtManager/channel`) и доводится до факта при старте
+  (`DN1Sup ExtensionStore/channel`) и доводится до факта при старте
   (`apply_saved_channel` — галочки Extension Manager при запуске
   восстанавливают прод, dev-канал иначе терялся бы после перезапуска).
 - **Карточки каталога** показывают бейдж DEV у активного dev-канала и
@@ -599,7 +614,7 @@
   за сессию на репозиторий; сетевые ошибки не кэшируются). Штатный источник
   — тело релиза, как и описано в PUBLISHING.md.
 - **Апдейтер грузится из папки расширения** (`File.dirname(__FILE__)` вместо
-  жёсткого `dn1sup_ext_manager/…`): в dev-варианте иначе подхватывался
+  жёсткого `dn1sup_extension_store/…`): в dev-варианте иначе подхватывался
   апдейтер прод-установки из Plugins (маркер dev-установки не работал, правки
   апдейтера не вступали в силу до перезапуска SketchUp).
 - **`fetch_text` приводит тело к UTF-8** (без charset Net::HTTP отдаёт
@@ -822,7 +837,7 @@
   - сводка опроса (сколько релизов получено), установка/удаление с результатом.
 - **Потокобезопасность лога**: запись через Mutex (фоновые потоки + главный).
 - `tools/pack.rb` синхронизирует общие файлы из `shared/` и в dev-копию
-  `src/dn1sup_ext_manager/` (ранее — только в архив).
+  `src/dn1sup_extension_store/` (ранее — только в архив).
 - `latest_release(repo)`: в лог пишется запрос по каждому репозиторию
   (`OK v…` / HTTP-код ошибки) — подробности видны в dev-режиме (см. [0.6.1]).
 
@@ -831,7 +846,7 @@
 ### DN1Sup Extension Store (v0.5.0)
 - **Интерфейс каталога переписан на Vue 3**: исходники — в `frontend/`
   (Vite + Tailwind + `vite-plugin-singlefile`), сборка одним файлом
-  (`npm run build`) кладётся в `src/dn1sup_ext_manager/html/index.html`.
+  (`npm run build`) кладётся в `src/dn1sup_extension_store/html/index.html`.
 - **Единый мост Ruby ↔ JS**: один экшен-колбэк `call_ruby` (имя команды +
   JSON-параметр) вместо набора отдельных колбэков; состояние и результаты
   операций пушатся в UI через `window.pushState` / `window.pushResult`.
@@ -891,7 +906,7 @@
 
 ## [0.2.1] — 2026-10-03
 
-### dn1sup_ext_manager (v0.2.1)
+### dn1sup_extension_store (v0.2.1)
 - **Исправлено определение установленной версии**: приоритет у фактической версии из Extension Manager; сохранённый при установке тег — только fallback.
 - Устранена JS-инъекция через `id` в `execute_script` (все строки — через `JSON.generate`); inline-`onclick` заменены на `data-action`/`data-id` + делегированные обработчики.
 - Подтверждение удаления — через нативный `UI.messagebox(MB_YESNO)` по мосту (`window.confirm` в HtmlDialog на части сборок подавлен).
@@ -903,7 +918,7 @@
 
 ## [0.2.0] — 2026-10-03
 
-### dn1sup_ext_manager (v0.2.0)
+### dn1sup_extension_store (v0.2.0)
 - **Исправление прокрутки**: шапка с поиском и фильтрами зафиксирована, список скроллится изолированно.
 - **Редизайн карточек**: компактные строки со статусами («✓ Установлено», «⚡ Обновление», «○ Не установлено»), версии в одну строку, лог изменений — в раскрывающемся блоке «Что нового».
 
@@ -911,16 +926,16 @@
 
 ## [0.1.0] — 2026-10-03
 
-### dn1sup_ext_manager (v0.1.0)
+### dn1sup_extension_store (v0.1.0)
 - Первый релиз менеджера расширений: установка и обновление .rbz напрямую с GitHub Releases.
 - Интерактивный HTML-интерфейс каталога.
 
-[0.6.2]: https://github.com/dn1test/dn1sup_ext_manager/releases
-[0.6.1]: https://github.com/dn1test/dn1sup_ext_manager/releases
-[0.6.0]: https://github.com/dn1test/dn1sup_ext_manager/releases
-[0.5.0]: https://github.com/dn1test/dn1sup_ext_manager/releases
-[0.4.1]: https://github.com/dn1test/dn1sup_ext_manager/releases
-[0.4.0]: https://github.com/dn1test/dn1sup_ext_manager/releases
+[0.6.2]: https://github.com/dn1test/dn1sup_extension_store/releases
+[0.6.1]: https://github.com/dn1test/dn1sup_extension_store/releases
+[0.6.0]: https://github.com/dn1test/dn1sup_extension_store/releases
+[0.5.0]: https://github.com/dn1test/dn1sup_extension_store/releases
+[0.4.1]: https://github.com/dn1test/dn1sup_extension_store/releases
+[0.4.0]: https://github.com/dn1test/dn1sup_extension_store/releases
 [0.3.3]: https://github.com/dn1test/sketchup-dn1sup-extensions/releases/tag/v0.3.3
 [0.3.1]: https://github.com/dn1test/sketchup-dn1sup-extensions/releases/tag/v0.3.1
 [0.2.1]: https://github.com/dn1test/sketchup-dn1sup-extensions/releases/tag/v0.2.1

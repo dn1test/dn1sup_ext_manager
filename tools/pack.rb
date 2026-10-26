@@ -3,9 +3,9 @@
 
 # tools/pack.rb — сборка .rbz-архива Extension Store.
 #
-#   ruby tools/pack.rb                # собрать dn1sup_ext_manager
+#   ruby tools/pack.rb                # собрать dn1sup_extension_store
 #
-# Исходники — в src/dn1sup_ext_manager. Остальные расширения DN1Sup
+# Исходники — в src/dn1sup_extension_store. Остальные расширения DN1Sup
 # собираются и выпускаются в собственных репозиториях; здесь хранится
 # только реестр (id/name/repo) для каталога, установки и обновлений.
 #
@@ -44,9 +44,9 @@ RBZ_EXCLUDE_DIRS = %w[
 
 # Конфигурация источников: в репозитории менеджера собирается только сам менеджер
 SOURCES = {
-  'dn1sup_ext_manager' => {
-    loader: File.expand_path('../src/dn1sup_ext_manager.rb', __dir__),
-    dir:    File.expand_path('../src/dn1sup_ext_manager', __dir__)
+  'dn1sup_extension_store' => {
+    loader: File.expand_path('../src/dn1sup_extension_store.rb', __dir__),
+    dir:    File.expand_path('../src/dn1sup_extension_store', __dir__)
   }
 }.freeze
 
@@ -115,8 +115,8 @@ def pack(id, source, shared_updater, reg_path)
       FileUtils.cp(shared_updater, src_copy) if File.file?(src_copy)
     end
 
-    # 4. Для dn1sup_ext_manager: комплектуем актуальный data/registry.json
-    if id == 'dn1sup_ext_manager' && File.file?(reg_path)
+    # 4. Для dn1sup_extension_store: комплектуем актуальный data/registry.json
+    if id == 'dn1sup_extension_store' && File.file?(reg_path)
       data_dir = File.join(stage_plugin_dir, 'data')
       FileUtils.mkdir_p(data_dir)
       FileUtils.cp(reg_path, File.join(data_dir, 'registry.json'))
@@ -180,8 +180,8 @@ registry.each do |entry|
   built += 1
 end
 
-# Всегда синхронизируем актуальный registry.json в src/dn1sup_ext_manager/data/registry.json
-local_reg = File.expand_path('../src/dn1sup_ext_manager/data/registry.json', __dir__)
+# Всегда синхронизируем актуальный registry.json в src/dn1sup_extension_store/data/registry.json
+local_reg = File.expand_path('../src/dn1sup_extension_store/data/registry.json', __dir__)
 if File.directory?(File.dirname(local_reg))
   FileUtils.cp(reg_path, local_reg)
 end

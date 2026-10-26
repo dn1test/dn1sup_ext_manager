@@ -29,7 +29,7 @@
 
 ```json
 [
-  { "id": "dn1sup_ext_manager",   "name": "DN1Sup Extension Store",    "repo": "dn1test/dn1sup_ext_manager" },
+  { "id": "dn1sup_extension_store",   "name": "DN1Sup Extension Store",    "repo": "dn1test/dn1sup_extension_store" },
   { "id": "dn1sup_time_project",  "name": "DN1Sup Time Project",      "repo": "dn1test/dn1sup_time_project" },
   { "id": "dn1sup_create_project","name": "DN1Sup Create Project",     "repo": "dn1test/dn1sup_create_project" },
   { "id": "dn1sup_autoselect_tag","name": "DN1Sup AutoSelect Tag",     "repo": "dn1test/dn1sup_autoselect_tag" },
@@ -79,7 +79,7 @@ GitHub Release (тег v*) в репозитории каждого расшир
 
 ### 1. Первичная установка Extension Store
 
-1. Скачайте актуальный файл [dn1sup_ext_manager.rbz](https://github.com/dn1test/dn1sup_ext_manager/releases/latest/download/dn1sup_ext_manager.rbz).
+1. Скачайте актуальный файл [dn1sup_extension_store.rbz](https://github.com/dn1test/dn1sup_extension_store/releases/latest/download/dn1sup_extension_store.rbz).
 2. В SketchUp откройте: **Расширения (Extensions) → Extension Manager → Install Extension** и выберите скачанный `.rbz`.
 3. Перезапустите SketchUp.
 
@@ -96,8 +96,8 @@ GitHub Release (тег v*) в репозитории каждого расшир
 ## Структура репозитория и сборка
 
 ```text
-src/dn1sup_ext_manager/   Исходники Extension Store (main.rb, html/, data/, icons/)
-src/dn1sup_ext_manager.rb Лоадер (регистрация в SketchUp)
+src/dn1sup_extension_store/   Исходники Extension Store (main.rb, html/, data/, icons/)
+src/dn1sup_extension_store.rb Лоадер (регистрация в SketchUp)
 shared/dn1sup_updater.rb  Общий модуль обновлений (копируется в .rbz при сборке)
 tools/pack.rb             Сборка .rbz
 tools/make_icons.rb       Генерация иконки тулбара (SVG + PNG)
@@ -107,7 +107,7 @@ test/                     Тесты менеджера
 ### Команды сборки
 
 ```powershell
-# Собрать dn1sup_ext_manager.rbz в packages/
+# Собрать dn1sup_extension_store.rbz в packages/
 ruby tools/pack.rb
 
 # Перегенерировать иконку тулбара
@@ -128,7 +128,7 @@ ruby tools/list_rbz.rb
 
 ## Версионирование
 
-- **Extension Store**: семантическая версия в лоадере `src/dn1sup_ext_manager.rb` и `main.rb`:
+- **Extension Store**: семантическая версия в лоадере `src/dn1sup_extension_store.rb` и `main.rb`:
   - **PATCH** (`x.x.+1`): мелкие исправления и багфиксы;
   - **MINOR** (`x.+1.0`): новый функционал, редизайн, доработки интерфейса;
   - **MAJOR** (`+1.0.0`): мажорные изменения архитектуры (только по согласованию).
@@ -156,7 +156,7 @@ ruby test/live_github_test.rb
 
 - В Ruby Console SketchUp можно перезагрузить файлы Extension Store без перезапуска программы:
   ```ruby
-  Dn1sup::ExtManager.reload
+  Dn1sup::ExtensionStore.reload
   ```
   (один id — dev-варианта с суффиксом `_dev` больше нет; рабочая копия
   правится напрямую, прод-сборка проверяется установкой `.rbz` из `packages/`).

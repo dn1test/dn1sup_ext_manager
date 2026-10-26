@@ -332,7 +332,7 @@ const bulkTitle = computed(() => {
   return `${doneWord}: ${(b.done || []).length} из ${b.total || 0}${failSuffix}`
 })
 const installCandidates = computed(() => state.products.filter(p => !p.is_installed || p.has_update || p.status === 'switch'))
-const uninstallCandidates = computed(() => state.products.filter(p => p.is_installed && p.id !== 'dn1sup_ext_manager'))
+const uninstallCandidates = computed(() => state.products.filter(p => p.is_installed && p.id !== 'dn1sup_extension_store'))
 
 function onInstallAll() {
   if (!installCandidates.value.length || bulkBusy.value) return

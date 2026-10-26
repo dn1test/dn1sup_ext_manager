@@ -78,7 +78,7 @@
 import { computed } from 'vue'
 import { RotateCw, Sun, Moon, Rows3, LayoutGrid, Power } from 'lucide-vue-next'
 import { useTheme } from '../composables/useTheme'
-import storeTile from '../assets/products/dn1sup_ext_manager.svg'
+import storeTile from '../assets/products/dn1sup_extension_store.svg'
 
 const props = defineProps({
   version: { type: String, default: '—' },

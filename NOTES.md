@@ -1,6 +1,6 @@
-# Заметки по архитектуре и разработке (dn1sup_ext_manager)
+# Заметки по архитектуре и разработке (dn1sup_extension_store)
 
-Репозиторий: [dn1test/dn1sup_ext_manager](https://github.com/dn1test/dn1sup_ext_manager)
+Репозиторий: [dn1test/dn1sup_extension_store](https://github.com/dn1test/dn1sup_extension_store)
 Менеджер (каталог, установка, обновление) расширений SketchUp через GitHub Releases.
 
 ---
@@ -10,7 +10,7 @@
 1. **Формат пакета .rbz**:
    - Стандартный zip-архив: в корне располагается loader `<id>.rb`, рядом папка `<id>/` с исходным кодом расширения.
    - Постоянная прямая ссылка на актуальный пакет:
-     `https://github.com/dn1test/dn1sup_ext_manager/releases/latest/download/dn1sup_ext_manager.rbz`
+     `https://github.com/dn1test/dn1sup_extension_store/releases/latest/download/dn1sup_extension_store.rbz`
 2. **Минимальный реестр [registry.json](registry.json)**:
    - Каждая запись — только `id`, `name`, `repo`: этого достаточно для каталога, скачивания и обновлений.
    - Версии, описания, changelog'и и `.rbz`-ассеты хранятся в репозиториях
@@ -31,10 +31,10 @@
      репозиториях (`dn1test/dn1sup_*`); здесь ведётся только реестр каталога.
 7. **Интерфейс на Vue 3 (v0.5.0)**:
    - Исходники UI — в `frontend/` (Vue 3 + Vite + Tailwind, `vite-plugin-singlefile`);
-     сборка `npm run build` кладёт единый HTML-бандл в `src/dn1sup_ext_manager/html/index.html`
+     сборка `npm run build` кладёт единый HTML-бандл в `src/dn1sup_extension_store/html/index.html`
      (`emptyOutDir: false`, dev-исключение `frontend/` в pack.rb).
    - Мост Ruby ↔ JS: один экшен-колбэк `call_ruby` (имя команды + JSON-параметр),
-     диспетчер `ExtManager.dispatch`; Ruby пушит в UI `window.pushState` /
+     диспетчер `ExtensionStore.dispatch`; Ruby пушит в UI `window.pushState` /
      `window.pushResult` — единый паттерн с dn1sup_create_project / dn1sup_save_settings.
    - JS error hook (error/unhandledrejection → `log_js_error`) инжектится со
      стороны Ruby при `ready` — без пересборки фронтенда.

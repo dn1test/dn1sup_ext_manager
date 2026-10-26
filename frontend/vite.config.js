@@ -14,7 +14,7 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: path.resolve(__dirname, '../src/dn1sup_ext_manager/html'),
+    outDir: path.resolve(__dirname, '../src/dn1sup_extension_store/html'),
     emptyOutDir: false,
     target: 'esnext',
     minify: true,

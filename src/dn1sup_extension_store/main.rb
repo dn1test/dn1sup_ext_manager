@@ -12,10 +12,10 @@ Sketchup.require File.join(File.dirname(__FILE__), 'dn1sup_updater')
 
 module Dn1sup
 
-  module ExtManager
-    ID      = 'dn1sup_ext_manager'
+  module ExtensionStore
+    ID      = 'dn1sup_extension_store'
     VERSION = '0.29.1'
-    REPO    = 'dn1test/dn1sup_ext_manager'
+    REPO    = 'dn1test/dn1sup_extension_store'
     ASSET   = "#{ID}.rbz"
     PAGE_URL     = "https://github.com/#{REPO}/releases"
     REGISTRY_URL = "https://raw.githubusercontent.com/#{REPO}/main/registry.json"
@@ -48,6 +48,29 @@ module Dn1sup
     CMD_TOOLTIP  = 'DN1Sup Extension Store — каталог, установка и обновление расширений'
     # Актуальная версия формата снапшота релизов (см. save/load_release_snapshot).
     SNAPSHOT_VERSION = 5
+
+    PREF_SECTION = 'DN1Sup ExtensionStore'.freeze
+    LEGACY_PREF_SECTION = 'DN1Sup ExtManager'.freeze
+
+    # Чтение/запись настроек с fallback на секцию старого имени
+    # (переименование dn1sup_ext_manager -> dn1sup_extension_store):
+    # читаем новую секцию, при отсутствии ключа — старую; пишем в новую.
+    def self.pref_read(key, default = nil)
+      return default unless defined?(Sketchup)
+
+      v = Sketchup.read_default(PREF_SECTION, key, nil)
+      v.nil? ? Sketchup.read_default(LEGACY_PREF_SECTION, key, default) : v
+    rescue StandardError
+      default
+    end
+
+    def self.pref_write(key, value)
+      return unless defined?(Sketchup)
+
+      Sketchup.write_default(PREF_SECTION, key, value)
+    rescue StandardError
+      nil
+    end
 
     @dialog = nil
     @release_cache = {}   # repo => предлагаемый (новейший стабильный) релиз
@@ -149,7 +172,7 @@ module Dn1sup
       return true if force
       return (@remote_registry_at.to_i <= 0 || @remote_registry.empty?) unless defined?(Sketchup)
 
-      last = Sketchup.read_default('DN1Sup ExtManager', 'last_remote_registry', 0)
+      last = pref_read( 'last_remote_registry', 0)
       (Time.now.to_i - last.to_i) >= DISCOVERY_INTERVAL
     rescue StandardError
       @remote_registry.empty?
@@ -159,7 +182,7 @@ module Dn1sup
       @remote_registry_at = Time.now.to_i
       return unless defined?(Sketchup)
 
-      Sketchup.write_default('DN1Sup ExtManager', 'last_remote_registry', @remote_registry_at)
+      pref_write( 'last_remote_registry', @remote_registry_at)
     rescue StandardError
       nil
     end
@@ -298,7 +321,7 @@ module Dn1sup
     def hidden_repos
       return [] unless defined?(Sketchup)
 
-      Sketchup.read_default('DN1Sup ExtManager', 'hidden_repos', '')
+      pref_read( 'hidden_repos', '')
               .to_s.split(',').map(&:strip).reject(&:empty?)
     rescue StandardError
       []
@@ -308,7 +331,7 @@ module Dn1sup
       return if repo.to_s.empty? || !defined?(Sketchup)
 
       list = (hidden_repos | [repo.to_s]).uniq
-      Sketchup.write_default('DN1Sup ExtManager', 'hidden_repos', list.join(','))
+      pref_write( 'hidden_repos', list.join(','))
     rescue StandardError => e
       Dn1sup::Updater.log_error(e)
     end
@@ -316,7 +339,7 @@ module Dn1sup
     def unhide_all_repos
       return unless defined?(Sketchup)
 
-      Sketchup.write_default('DN1Sup ExtManager', 'hidden_repos', nil)
+      pref_write( 'hidden_repos', nil)
     rescue StandardError => e
       Dn1sup::Updater.log_error(e)
     end
@@ -391,7 +414,7 @@ module Dn1sup
       return true if force
       return false unless defined?(Sketchup)
 
-      last = Sketchup.read_default('DN1Sup ExtManager', 'last_discovery', 0)
+      last = pref_read( 'last_discovery', 0)
       (Time.now.to_i - last.to_i) >= DISCOVERY_INTERVAL
     rescue StandardError
       false
@@ -400,7 +423,7 @@ module Dn1sup
     def mark_discovered
       return unless defined?(Sketchup)
 
-      Sketchup.write_default('DN1Sup ExtManager', 'last_discovery', Time.now.to_i)
+      pref_write( 'last_discovery', Time.now.to_i)
     rescue StandardError
       nil
     end
@@ -549,7 +572,7 @@ module Dn1sup
       end
 
       # 2. Версия, сохранённая при установке через Store
-      saved = Sketchup.read_default('DN1Sup ExtManager', "installed_#{id}", nil)
+      saved = pref_read( "installed_#{id}", nil)
       return saved.to_s.sub(/\Av/, '') unless saved.to_s.empty?
 
       nil
@@ -858,7 +881,7 @@ module Dn1sup
       raw =
         if body.is_a?(String) && !body.strip.empty?
           # Ищем персональную секцию расширения в Release Notes:
-          # ### [dn1sup_ext_manager] или ### dn1sup_ext_manager (v0.2.0) или ## DN1Sup Extension Store
+          # ### [dn1sup_extension_store] или ### dn1sup_extension_store (v0.2.0) или ## DN1Sup Extension Store
           escaped_keys = [Regexp.escape(id), Regexp.escape(name)].reject(&:empty?).join('|')
           pattern = /(?:^|\n)[#]{2,4}\s*(?:\[?(?:#{escaped_keys})\]?)[^\n]*\n(.*?)(?=\n[#]{2,4}\s|\z)/mi
           if (m = body.match(pattern)) && !m[1].to_s.strip.empty?
@@ -1140,7 +1163,7 @@ module Dn1sup
         # Сохраняем актуальную версию из релиза репозитория
         installed_ver = release['tag_name'].to_s.sub(/\Av/i, '')
         installed_ver = entry['version'].to_s.sub(/\Av/i, '') if installed_ver.empty?
-        Sketchup.write_default('DN1Sup ExtManager', "installed_#{id}", installed_ver) if defined?(Sketchup)
+        pref_write( "installed_#{id}", installed_ver) if defined?(Sketchup)
         store_log("установлен/обновлён #{id} -> v#{installed_ver} (#{repo})")
         msg = "Расширение «#{name}» (v#{installed_ver}) успешно установлено! Перезапустите SketchUp для полной загрузки компонентов."
         { 'ok' => true, 'message' => msg }
@@ -1205,7 +1228,7 @@ module Dn1sup
 
       # 3. Сбрасываем кэш версий (включая installed_at — иначе после
       # переустановки старой сборки даты сравнивались бы с прошлой установкой)
-      Sketchup.write_default('DN1Sup ExtManager', "installed_#{id}", nil)
+      pref_write( "installed_#{id}", nil)
       Sketchup.write_default('Dn1supUpdater', "last_#{id}", 0)
       Sketchup.write_default('Dn1supUpdater', "installed_at_#{id}", nil)
 
@@ -1900,7 +1923,7 @@ module Dn1sup
 
       @dialog = UI::HtmlDialog.new(
         dialog_title:    'DN1Sup Extension Store',
-        preferences_key: 'dn1sup_ext_manager_store_window',
+        preferences_key: 'dn1sup_extension_store_store_window',
         scrollable:      true,
         resizable:       true,
         width:           860,
@@ -2103,13 +2126,13 @@ module Dn1sup
       return unless defined?(Sketchup) && defined?(UI)
 
       begin
-        last = Sketchup.read_default('DN1Sup ExtManager', 'last_startup_notice', 0)
+        last = pref_read( 'last_startup_notice', 0)
         return if (Time.now.to_i - last.to_i) < DISCOVERY_INTERVAL
       rescue StandardError
         nil
       end
       begin
-        Sketchup.write_default('DN1Sup ExtManager', 'last_startup_notice', Time.now.to_i)
+        pref_write( 'last_startup_notice', Time.now.to_i)
       rescue StandardError
         nil
       end
@@ -2572,4 +2595,10 @@ module Dn1sup
       file_loaded(__FILE__)
     end
   end
+end
+
+module Dn1sup
+  # Совместимость со старым именем (переименование
+  # dn1sup_ext_manager -> dn1sup_extension_store).
+  ExtManager = ExtensionStore unless defined?(ExtManager)
 end

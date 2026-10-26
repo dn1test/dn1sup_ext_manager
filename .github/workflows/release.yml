@@ -24,7 +24,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build ExtManager RBZ
+      - name: Build ExtensionStore RBZ
         run: ruby tools/pack.rb
 
       - name: Build release body
@@ -33,6 +33,6 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: packages/dn1sup_ext_manager.rbz
+          files: packages/dn1sup_extension_store.rbz
           body_path: release_body.md
           generate_release_notes: true

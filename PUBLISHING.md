@@ -9,9 +9,9 @@
 
 | Требование | Статус |
 |---|---|
-| Имя `dn1sup_*` в аккаунте `dn1test` | ✅ `dn1test/dn1sup_ext_manager` |
+| Имя `dn1sup_*` в аккаунте `dn1test` | ✅ `dn1test/dn1sup_extension_store` |
 | Не archived | ✅ |
 | `registry.json` в корне `main` | ✅ (id, name, repo, version) |
-| Стабильные релизы с `<id>.rbz` | ✅ `packages/dn1sup_ext_manager.rbz` через CI |
+| Стабильные релизы с `<id>.rbz` | ✅ `packages/dn1sup_extension_store.rbz` через CI |
 | Теги `vMAJOR.MINOR.PATCH` | ✅ (workflow на `v*`) |
-| Регистратор `<id>.rb` + `ext.id` | ✅ `src/dn1sup_ext_manager.rb` |
+| Регистратор `<id>.rb` + `ext.id` | ✅ `src/dn1sup_extension_store.rb` |

@@ -25,7 +25,7 @@ BRAND = '#0c8ee9' # фирменный синий знака менеджера
 
 # Цвет кодирует назначение расширения (совпадает с плитками каталога).
 PRODUCT_TILES = {
-  'dn1sup_ext_manager'       => '#0c8ee9', # витрина каталога
+  'dn1sup_extension_store'       => '#0c8ee9', # витрина каталога
   'dn1sup_time_project'      => '#0ea5e9', # учёт времени
   'dn1sup_create_project'    => '#10b981', # создание проекта
   'dn1sup_comp_add_view'     => '#f59e0b', # копии компонента и проекции
@@ -78,7 +78,7 @@ PDF2_PAGE = [
 
 GLYPHS = {
   # Витрина: козырёк со свесом, корпус, два окна и дверь.
-  'dn1sup_ext_manager' => [
+  'dn1sup_extension_store' => [
     [:poly, [[4, 3.5], [20, 3.5], [22, 9], [2, 9]], :sign, 1.0],
     [:rect, 5, 10.5, 14, 10.5, 0, :sign, 1.0],
     [:rect, 6.8, 11.8, 2.8, 2.4, 0, :hole, 1.0],
@@ -466,9 +466,9 @@ end
 root = File.expand_path('..', __dir__)
 
 # 1. Менеджер: знак тулбара (SVG + PNG 16/24/32) в src-копию для .rbz и dev-копию
-manager_ops = GLYPHS.fetch('dn1sup_ext_manager')
+manager_ops = GLYPHS.fetch('dn1sup_extension_store')
 [
-  File.join(root, 'src', 'dn1sup_ext_manager', 'icons'),
+  File.join(root, 'src', 'dn1sup_extension_store', 'icons'),
   File.join(root, 'icons')
 ].each do |out|
   FileUtils.mkdir_p(out)

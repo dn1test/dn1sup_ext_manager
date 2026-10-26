@@ -18,7 +18,7 @@ $failed = 0
 module Sketchup
   # Отдельных переключателей тулбара больше нет: у каждого расширения
   # всегда свой тулбар, менеджер всегда создаёт свой.
-  $prefs = { 'Dn1supUpdater' => {}, 'DN1Sup ExtManager' => {} }
+  $prefs = { 'Dn1supUpdater' => {}, 'DN1Sup ExtensionStore' => {} }
 
   module_function
 
@@ -188,7 +188,7 @@ assert 'check! вернул summary', summary.is_a?(Hash) && summary[:latest] ==
 assert 'check! записал метку времени', Sketchup.read_default('Dn1supUpdater', 'last_test').is_a?(Integer)
 
 # 5b. registry_entry: per-extension версия из registry.json
-repo_for_reg = 'dn1test/dn1sup_ext_manager'
+repo_for_reg = 'dn1test/dn1sup_extension_store'
 reg_entry = Dn1sup::Updater.registry_entry(repo_for_reg, 'dn1sup_time_project')
 if reg_entry.nil?
   local_reg = JSON.parse(File.read(File.expand_path('../registry.json', __dir__)))
@@ -206,10 +206,10 @@ bad = Dn1sup::Updater.latest_release('nonexistent-user-000/nonexistent-repo-999'
 assert '404 -> {} (устойчивость)', bad == {}
 
 # 7b. repo_meta: живой репозиторий существует, несуществующий — 404
-live_meta = Dn1sup::Updater.repo_meta('dn1test/dn1sup_ext_manager')
+live_meta = Dn1sup::Updater.repo_meta('dn1test/dn1sup_extension_store')
 assert 'repo_meta: живой репозиторий — exists без renamed',
        live_meta.is_a?(Hash) && live_meta[:exists] == true && live_meta[:renamed] == false &&
-       live_meta[:repo] == 'dn1test/dn1sup_ext_manager', live_meta.inspect
+       live_meta[:repo] == 'dn1test/dn1sup_extension_store', live_meta.inspect
 gone_meta = Dn1sup::Updater.repo_meta('nonexistent-user-000/nonexistent-repo-999')
 assert 'repo_meta: 404 -> exists: false', gone_meta == { exists: false }, gone_meta.inspect
 
@@ -223,10 +223,10 @@ current_summary = Dn1sup::Updater.check!(
 )
 assert 'check! возвращает nil для актуальной версии', current_summary.nil?
 
-# 10. Загрузка и проверка dn1sup_ext_manager
-require_relative '../src/dn1sup_ext_manager/main'
-Sketchup.write_default('DN1Sup ExtManager', 'installed_dummy', '1.5.0')
-assert 'ExtManager::installed_version fallback read_default', Dn1sup::ExtManager.installed_version('dummy') == '1.5.0'
+# 10. Загрузка и проверка dn1sup_extension_store
+require_relative '../src/dn1sup_extension_store/main'
+Sketchup.write_default('DN1Sup ExtensionStore', 'installed_dummy', '1.5.0')
+assert 'ExtensionStore::installed_version fallback read_default', Dn1sup::ExtensionStore.installed_version('dummy') == '1.5.0'
 
 assert 'тулбар создан с кнопкой каталога', $dialog_log.include?('TOOLBAR_ITEM')
 assert 'тулбар показан (restore)', $dialog_log.include?('TOOLBAR_RESTORE')
@@ -242,14 +242,14 @@ Sketchup.define_singleton_method(:find_support_file) { |name| name == 'Plugins' 
 Sketchup.write_default('Dn1supUpdater', 'installed_at_dn1sup_save_settings', Time.now.to_i)
 
 ['.', '..', '../evil', 'foo', ''].each do |bad|
-  r = Dn1sup::ExtManager.perform_uninstall(bad)
+  r = Dn1sup::ExtensionStore.perform_uninstall(bad)
   assert "uninstall отклоняет #{bad.inspect}", r['ok'] == false, r.inspect
 end
-r = Dn1sup::ExtManager.perform_uninstall('dn1sup_nosuch')
+r = Dn1sup::ExtensionStore.perform_uninstall('dn1sup_nosuch')
 assert 'uninstall отклоняет id вне реестра', r['ok'] == false, r.inspect
 assert 'после отклонений соседний плагин цел', File.file?(File.join(fake_plugins, 'other_plugin.rb'))
 
-r = Dn1sup::ExtManager.perform_uninstall('dn1sup_save_settings')
+r = Dn1sup::ExtensionStore.perform_uninstall('dn1sup_save_settings')
 assert 'uninstall валидного id проходит', r['ok'] == true, r.inspect
 assert 'файлы расширения удалены', !File.exist?(File.join(fake_plugins, 'dn1sup_save_settings')) &&
                                    !File.exist?(File.join(fake_plugins, 'dn1sup_save_settings.rb'))
@@ -259,21 +259,21 @@ Sketchup.singleton_class.send(:remove_method, :find_support_file)
 FileUtils.remove_entry(fake_plugins)
 
 # 10c. full_tag_name: полный тег из списка релизов, фолбэк v<version>
-Dn1sup::ExtManager.instance_variable_set(
+Dn1sup::ExtensionStore.instance_variable_set(
   :@releases_cache,
   'dn1test/tag_repo' => [{ 'tag_name' => '0.4.1' }, { 'tag_name' => 'v2.4.1' }]
 )
 assert 'full_tag_name: тег без префикса берётся как есть',
-       Dn1sup::ExtManager.full_tag_name('dn1test/tag_repo', '0.4.1') == '0.4.1'
+       Dn1sup::ExtensionStore.full_tag_name('dn1test/tag_repo', '0.4.1') == '0.4.1'
 assert 'full_tag_name: v-тег из списка',
-       Dn1sup::ExtManager.full_tag_name('dn1test/tag_repo', '2.4.1') == 'v2.4.1'
+       Dn1sup::ExtensionStore.full_tag_name('dn1test/tag_repo', '2.4.1') == 'v2.4.1'
 assert 'full_tag_name: фолбэк v<version>',
-       Dn1sup::ExtManager.full_tag_name('dn1test/tag_repo', '9.9.9') == 'v9.9.9'
+       Dn1sup::ExtensionStore.full_tag_name('dn1test/tag_repo', '9.9.9') == 'v9.9.9'
 assert 'full_tag_name: пустой список — фолбэк',
-       Dn1sup::ExtManager.full_tag_name('dn1test/other', '1.0.0') == 'v1.0.0'
+       Dn1sup::ExtensionStore.full_tag_name('dn1test/other', '1.0.0') == 'v1.0.0'
 
 # 11. Проверка prompt_pick при нажатии Cancel (UI.inputbox возвращает false)
-assert 'prompt_pick обрабатывает false без исключений', Dn1sup::ExtManager.prompt_pick([{ 'name' => 'Test', 'installed_version' => nil }]).nil?
+assert 'prompt_pick обрабатывает false без исключений', Dn1sup::ExtensionStore.prompt_pick([{ 'name' => 'Test', 'installed_version' => nil }]).nil?
 
 # 11b. latest_changelog_section: верхняя секция CHANGELOG.md (резерв «Что нового»)
 sample_md = [
@@ -281,7 +281,7 @@ sample_md = [
   '- fix: правка два', '- feat: фича один', '', '### dn1sup_demo', '', '- внутренняя заметка', '',
   '## [0.1.0] — 2026-10-09', '- старт', ''
 ].join("\n")
-section = Dn1sup::ExtManager.latest_changelog_section(sample_md)
+section = Dn1sup::ExtensionStore.latest_changelog_section(sample_md)
 assert 'latest_changelog_section: пропускает заголовки без версии (Unreleased)',
        !section.include?('Unreleased') && !section.include?('0.1.0')
 assert 'latest_changelog_section: берёт тело верхней секции без строк заголовков',
@@ -290,13 +290,13 @@ assert 'latest_changelog_section: берёт тело верхней секци�
 assert 'latest_changelog_section: не заходит в следующую секцию',
        !section.include?('старт')
 assert 'latest_changelog_section: пустой ввод — пустая секция',
-       Dn1sup::ExtManager.latest_changelog_section('').empty? &&
-       Dn1sup::ExtManager.latest_changelog_section(nil).empty?
+       Dn1sup::ExtensionStore.latest_changelog_section('').empty? &&
+       Dn1sup::ExtensionStore.latest_changelog_section(nil).empty?
 
 # 12. Проверка мгновенного сбора каталога без сети (offline mode)
-offline_products = Dn1sup::ExtManager.collect_products_data(false, check_releases: false)
-assert 'collect_products_data offline возвращает все расширения из реестра', offline_products.size == Dn1sup::ExtManager.load_registry.size
-assert 'collect_products_data offline содержит id dn1sup_ext_manager', offline_products.any? { |p| p['id'] == 'dn1sup_ext_manager' }
+offline_products = Dn1sup::ExtensionStore.collect_products_data(false, check_releases: false)
+assert 'collect_products_data offline возвращает все расширения из реестра', offline_products.size == Dn1sup::ExtensionStore.load_registry.size
+assert 'collect_products_data offline содержит id dn1sup_extension_store', offline_products.any? { |p| p['id'] == 'dn1sup_extension_store' }
 assert 'collect_products_data offline содержит id dn1sup_comp_add_view', offline_products.any? { |p| p['id'] == 'dn1sup_comp_add_view' }
 assert 'collect_products_data offline содержит id dn1sup_create_project', offline_products.any? { |p| p['id'] == 'dn1sup_create_project' }
 assert 'collect_products_data offline содержит id dn1sup_save_settings', offline_products.any? { |p| p['id'] == 'dn1sup_save_settings' }
@@ -315,7 +315,7 @@ class FakeStoreDialog
 end
 
 store_dlg = FakeStoreDialog.new
-Dn1sup::ExtManager.instance_variable_set(:@dialog, store_dlg)
+Dn1sup::ExtensionStore.instance_variable_set(:@dialog, store_dlg)
 
 # defer_async синхронно: start_timer вызывает блок сразу (repeat=false в SketchUp
 # — однократный вызов; здесь повторный вызов не нужен, т.к. работа синхронна)
@@ -325,49 +325,49 @@ UI.define_singleton_method(:stop_timer)  { |_timer| true }
 
 begin
   # Предзаполняем кэш релизов: pushState уйдёт офлайн, без сетевых запросов
-  entries = Dn1sup::ExtManager.load_registry
-  Dn1sup::ExtManager.instance_variable_set(
+  entries = Dn1sup::ExtensionStore.load_registry
+  Dn1sup::ExtensionStore.instance_variable_set(
     :@release_cache,
     entries.each_with_object({}) { |e, h| h[e['repo'].to_s] = { 'tag_name' => 'v9.9.9' } }
   )
   # Откладываем автопоиск GitHub: dispatch-тесты должны быть офлайн
-  Sketchup.write_default('DN1Sup ExtManager', 'last_discovery', Time.now.to_i)
+  Sketchup.write_default('DN1Sup ExtensionStore', 'last_discovery', Time.now.to_i)
 
   store_dlg.scripts.clear
-  Dn1sup::ExtManager.dispatch(store_dlg, 'ready', '')
+  Dn1sup::ExtensionStore.dispatch(store_dlg, 'ready', '')
   pushed = store_dlg.scripts.grep(/\Awindow\.pushState\(/).last
   assert 'dispatch ready -> pushState', !!pushed, pushed.to_s[0, 120]
   assert 'pushState содержит version', pushed.to_s.include?('"version":')
   assert 'pushState содержит products', pushed.to_s.include?('"products":[')
-  assert 'pushState содержит все расширения реестра', pushed.to_s.include?('"dn1sup_ext_manager"')
+  assert 'pushState содержит все расширения реестра', pushed.to_s.include?('"dn1sup_extension_store"')
 
   store_dlg.scripts.clear
-  Dn1sup::ExtManager.dispatch(store_dlg, 'install', JSON.generate('id' => 'no_such_ext'))
+  Dn1sup::ExtensionStore.dispatch(store_dlg, 'install', JSON.generate('id' => 'no_such_ext'))
   res_script = store_dlg.scripts.grep(/window\.pushResult\(/).last
   assert 'dispatch install неизвестного id -> pushResult ok:false', !!res_script && res_script.include?('false'), res_script.to_s[0, 160]
 
   store_dlg.scripts.clear
-  Dn1sup::ExtManager.dispatch(store_dlg, 'confirm_uninstall', JSON.generate('id' => 'no_such_ext'))
+  Dn1sup::ExtensionStore.dispatch(store_dlg, 'confirm_uninstall', JSON.generate('id' => 'no_such_ext'))
   conf_script = store_dlg.scripts.grep(/window\.pushResult\(/).last
   assert 'dispatch confirm_uninstall -> pushResult(kind, payload)', !!conf_script && conf_script.include?('confirm_uninstall'), conf_script.to_s[0, 160]
 
   store_dlg.scripts.clear
-  Dn1sup::ExtManager.dispatch(store_dlg, 'hide', JSON.generate('repo' => 'dn1test/dn1sup_dummy_found'))
+  Dn1sup::ExtensionStore.dispatch(store_dlg, 'hide', JSON.generate('repo' => 'dn1test/dn1sup_dummy_found'))
   assert 'dispatch hide -> перерисовка каталога', store_dlg.scripts.grep(/\Awindow\.pushState\(/).any?
-  assert 'dispatch hide записал pref', Sketchup.read_default('DN1Sup ExtManager', 'hidden_repos').to_s.include?('dn1sup_dummy_found')
-  Dn1sup::ExtManager.unhide_all_repos
+  assert 'dispatch hide записал pref', Sketchup.read_default('DN1Sup ExtensionStore', 'hidden_repos').to_s.include?('dn1sup_dummy_found')
+  Dn1sup::ExtensionStore.unhide_all_repos
 
   before = $dialog_log.size
-  Dn1sup::ExtManager.dispatch(store_dlg, 'неизвестная_команда', '')
+  Dn1sup::ExtensionStore.dispatch(store_dlg, 'неизвестная_команда', '')
   assert 'dispatch неизвестная команда не роняет код', $dialog_log.size >= before
 ensure
   UI.define_singleton_method(:start_timer, orig_start_timer)
   UI.singleton_class.send(:remove_method, :stop_timer) rescue nil
-  Dn1sup::ExtManager.instance_variable_set(:@dialog, nil)
-  Dn1sup::ExtManager.instance_variable_set(:@release_cache, {})
-  Dn1sup::ExtManager.instance_variable_set(:@fetching, false)
-  Dn1sup::ExtManager.instance_variable_set(:@pending_force, false)
-  Dn1sup::ExtManager.unhide_all_repos
+  Dn1sup::ExtensionStore.instance_variable_set(:@dialog, nil)
+  Dn1sup::ExtensionStore.instance_variable_set(:@release_cache, {})
+  Dn1sup::ExtensionStore.instance_variable_set(:@fetching, false)
+  Dn1sup::ExtensionStore.instance_variable_set(:@pending_force, false)
+  Dn1sup::ExtensionStore.unhide_all_repos
 end
 
 # 13b. Автопоиск расширений: слияние реестра и найденного, скрытие, коммиты,
@@ -382,27 +382,27 @@ discovered_fixture = [
   }
 ]
 begin
-  Dn1sup::ExtManager.instance_variable_set(:@discovered_entries, discovered_fixture)
+  Dn1sup::ExtensionStore.instance_variable_set(:@discovered_entries, discovered_fixture)
 
-  merged = Dn1sup::ExtManager.merged_entries
-  assert 'merged_entries: реестр + найденное', merged.any? { |e| e['id'] == 'dn1sup_dummy_found' } && merged.any? { |e| e['id'] == 'dn1sup_ext_manager' }
-  assert 'find_entry находит найденное расширение', Dn1sup::ExtManager.find_entry('dn1sup_dummy_found').is_a?(Hash)
+  merged = Dn1sup::ExtensionStore.merged_entries
+  assert 'merged_entries: реестр + найденное', merged.any? { |e| e['id'] == 'dn1sup_dummy_found' } && merged.any? { |e| e['id'] == 'dn1sup_extension_store' }
+  assert 'find_entry находит найденное расширение', Dn1sup::ExtensionStore.find_entry('dn1sup_dummy_found').is_a?(Hash)
 
   # Дедупликация: повторные записи автопоиска (исторические снапшоты,
   # повторные запуски) не плодят карточки — одна копия на id/repo
-  Dn1sup::ExtManager.instance_variable_set(:@discovered_entries, Array.new(5) { discovered_fixture[0].dup })
-  merged_dup = Dn1sup::ExtManager.merged_entries
+  Dn1sup::ExtensionStore.instance_variable_set(:@discovered_entries, Array.new(5) { discovered_fixture[0].dup })
+  merged_dup = Dn1sup::ExtensionStore.merged_entries
   assert 'merged_entries: дубли найденного схлопнуты', merged_dup.count { |e| e['id'] == 'dn1sup_dummy_found' } == 1
-  assert 'merged_entries: дубли не ломают реестр', merged_dup.count { |e| e['id'] == 'dn1sup_ext_manager' } == 1
-  Dn1sup::ExtManager.instance_variable_set(:@discovered_entries, discovered_fixture)
-  assert 'product_name для найденного расширения', Dn1sup::ExtManager.product_name('dn1sup_dummy_found') == 'DN1Sup Dummy Found'
+  assert 'merged_entries: дубли не ломают реестр', merged_dup.count { |e| e['id'] == 'dn1sup_extension_store' } == 1
+  Dn1sup::ExtensionStore.instance_variable_set(:@discovered_entries, discovered_fixture)
+  assert 'product_name для найденного расширения', Dn1sup::ExtensionStore.product_name('dn1sup_dummy_found') == 'DN1Sup Dummy Found'
 
   # Найденное без известных релизов в каталог не попадает
-  offline = Dn1sup::ExtManager.collect_products_data(false, check_releases: false)
+  offline = Dn1sup::ExtensionStore.collect_products_data(false, check_releases: false)
   assert 'collect: найденное без релизов скрыто', offline.none? { |p| p['discovered'] }
 
   # С известными релизами появляется карточка discovered (не установлено)
-  Dn1sup::ExtManager.instance_variable_set(
+  Dn1sup::ExtensionStore.instance_variable_set(
     :@releases_cache,
     {
       'dn1test/dn1sup_dummy_found' => [
@@ -413,45 +413,45 @@ begin
       ]
     }
   )
-  dummy = Dn1sup::ExtManager.collect_products_data(false, check_releases: false).find { |p| p['id'] == 'dn1sup_dummy_found' }
+  dummy = Dn1sup::ExtensionStore.collect_products_data(false, check_releases: false).find { |p| p['id'] == 'dn1sup_dummy_found' }
   assert 'collect: найденное с релизами показано', !!dummy && dummy['discovered'] == true
   assert 'collect: найденное помечено не установленным', !!dummy && dummy['is_installed'] == false
   assert 'collect: у найденного есть .rbz ассет', !!dummy && dummy['asset'] == 'dn1sup_dummy_found.rbz'
 
   # Коммиты из кэша попадают в payload при совпадении пары версий
-  Dn1sup::ExtManager.instance_variable_set(
+  Dn1sup::ExtensionStore.instance_variable_set(
     :@commits_cache,
     { 'dn1test/dn1sup_dummy_found' => { 'installed' => '', 'offered' => '0.1.0', 'messages' => ['feat: demo'] } }
   )
-  dummy2 = Dn1sup::ExtManager.collect_products_data(false, check_releases: false).find { |p| p['id'] == 'dn1sup_dummy_found' }
+  dummy2 = Dn1sup::ExtensionStore.collect_products_data(false, check_releases: false).find { |p| p['id'] == 'dn1sup_dummy_found' }
   assert 'collect: коммиты в payload при совпадении версий', !!dummy2 && dummy2['commits'] == ['feat: demo']
 
   # Скрытие найденного репозитория
-  Dn1sup::ExtManager.hide_repo('dn1test/dn1sup_dummy_found')
-  assert 'hide_repo: запись в pref', Sketchup.read_default('DN1Sup ExtManager', 'hidden_repos').to_s.include?('dn1sup_dummy_found')
-  assert 'merged_entries: скрытое отфильтровано', Dn1sup::ExtManager.merged_entries.none? { |e| e['id'] == 'dn1sup_dummy_found' }
-  Dn1sup::ExtManager.unhide_all_repos
-  assert 'unhide_all_repos: pref очищен', Dn1sup::ExtManager.hidden_repos.empty?
+  Dn1sup::ExtensionStore.hide_repo('dn1test/dn1sup_dummy_found')
+  assert 'hide_repo: запись в pref', Sketchup.read_default('DN1Sup ExtensionStore', 'hidden_repos').to_s.include?('dn1sup_dummy_found')
+  assert 'merged_entries: скрытое отфильтровано', Dn1sup::ExtensionStore.merged_entries.none? { |e| e['id'] == 'dn1sup_dummy_found' }
+  Dn1sup::ExtensionStore.unhide_all_repos
+  assert 'unhide_all_repos: pref очищен', Dn1sup::ExtensionStore.hidden_repos.empty?
 
   # Снапшот v3: найденные расширения и коммиты переживают перезапуск
   assert 'снапшот пишется в песочницу, не в живой %TEMP%',
-         Dn1sup::ExtManager.snapshot_path.to_s.start_with?($smoke_tmp),
-         Dn1sup::ExtManager.snapshot_path.to_s
-  Dn1sup::ExtManager.save_release_snapshot
-  Dn1sup::ExtManager.instance_variable_set(:@discovered_entries, [])
-  Dn1sup::ExtManager.instance_variable_set(:@commits_cache, {})
-  Dn1sup::ExtManager.instance_variable_set(:@release_cache, {})
-  Dn1sup::ExtManager.instance_variable_set(:@releases_cache, {})
-  Dn1sup::ExtManager.load_release_snapshot
-  assert 'снапшот v3: discovered восстановлен', Dn1sup::ExtManager.merged_entries.any? { |e| e['id'] == 'dn1sup_dummy_found' }
+         Dn1sup::ExtensionStore.snapshot_path.to_s.start_with?($smoke_tmp),
+         Dn1sup::ExtensionStore.snapshot_path.to_s
+  Dn1sup::ExtensionStore.save_release_snapshot
+  Dn1sup::ExtensionStore.instance_variable_set(:@discovered_entries, [])
+  Dn1sup::ExtensionStore.instance_variable_set(:@commits_cache, {})
+  Dn1sup::ExtensionStore.instance_variable_set(:@release_cache, {})
+  Dn1sup::ExtensionStore.instance_variable_set(:@releases_cache, {})
+  Dn1sup::ExtensionStore.load_release_snapshot
+  assert 'снапшот v3: discovered восстановлен', Dn1sup::ExtensionStore.merged_entries.any? { |e| e['id'] == 'dn1sup_dummy_found' }
   assert 'снапшот v3: commits восстановлен',
-         Dn1sup::ExtManager.instance_variable_get(:@commits_cache)['dn1test/dn1sup_dummy_found']['messages'] == ['feat: demo']
+         Dn1sup::ExtensionStore.instance_variable_get(:@commits_cache)['dn1test/dn1sup_dummy_found']['messages'] == ['feat: demo']
 ensure
-  Dn1sup::ExtManager.instance_variable_set(:@discovered_entries, [])
-  Dn1sup::ExtManager.instance_variable_set(:@commits_cache, {})
-  Dn1sup::ExtManager.instance_variable_set(:@release_cache, {})
-  Dn1sup::ExtManager.instance_variable_set(:@releases_cache, {})
-  Dn1sup::ExtManager.unhide_all_repos
+  Dn1sup::ExtensionStore.instance_variable_set(:@discovered_entries, [])
+  Dn1sup::ExtensionStore.instance_variable_set(:@commits_cache, {})
+  Dn1sup::ExtensionStore.instance_variable_set(:@release_cache, {})
+  Dn1sup::ExtensionStore.instance_variable_set(:@releases_cache, {})
+  Dn1sup::ExtensionStore.unhide_all_repos
 end
 
 # 13c. Мёртвые/переименованные репозитории: repo_meta (офлайн, с подменой
@@ -490,126 +490,126 @@ end
 
 begin
   # --- apply_repo_status и фильтрация карточек ----------------------------
-  Dn1sup::ExtManager.instance_variable_set(:@discovered_entries, [discovered_fixture[0].dup])
-  Dn1sup::ExtManager.instance_variable_set(
+  Dn1sup::ExtensionStore.instance_variable_set(:@discovered_entries, [discovered_fixture[0].dup])
+  Dn1sup::ExtensionStore.instance_variable_set(
     :@releases_cache,
     { 'dn1test/dn1sup_dummy_found' => [{ 'tag_name' => 'v0.1.0', 'published_at' => '2026-10-01T00:00:00Z', 'assets' => [] }] }
   )
   # save_settings считаем установленным: карточка с мёртвым репо должна
   # остаться в каталоге с пометкой
-  Sketchup.write_default('DN1Sup ExtManager', 'installed_dn1sup_save_settings', '1.0.0')
+  Sketchup.write_default('DN1Sup ExtensionStore', 'installed_dn1sup_save_settings', '1.0.0')
 
-  Dn1sup::ExtManager.apply_repo_status(
+  Dn1sup::ExtensionStore.apply_repo_status(
     'dn1test/dn1sup_dummy_found'   => { exists: false },
     'dn1test/dn1sup_save_settings' => { exists: true, repo: 'dn1test/dn1sup_save_settings_new', renamed: true },
-    'dn1test/dn1sup_ext_manager'   => { exists: true, repo: 'dn1test/dn1sup_ext_manager', renamed: false },
+    'dn1test/dn1sup_extension_store'   => { exists: true, repo: 'dn1test/dn1sup_extension_store', renamed: false },
     'dn1test/unreachable'          => nil
   )
-  stale_map = Dn1sup::ExtManager.instance_variable_get(:@stale_repos)
+  stale_map = Dn1sup::ExtensionStore.instance_variable_get(:@stale_repos)
   assert 'apply: удалённый помечен gone', stale_map['dn1test/dn1sup_dummy_found']['status'] == 'gone'
   assert 'apply: переименованный помечен с новым именем',
          stale_map['dn1test/dn1sup_save_settings']['status'] == 'renamed' &&
          stale_map['dn1test/dn1sup_save_settings']['renamed_to'] == 'dn1test/dn1sup_save_settings_new'
-  assert 'apply: живой репозиторий — ok', stale_map['dn1test/dn1sup_ext_manager']['status'] == 'ok'
+  assert 'apply: живой репозиторий — ok', stale_map['dn1test/dn1sup_extension_store']['status'] == 'ok'
   assert 'apply: сеть (nil) — без пометки', stale_map['dn1test/unreachable'].nil?
   assert 'apply: stale? видит мёртвые',
-         Dn1sup::ExtManager.stale?('dn1test/dn1sup_dummy_found') &&
-         Dn1sup::ExtManager.stale?('dn1test/dn1sup_save_settings')
-  assert 'apply: живой не stale', !Dn1sup::ExtManager.stale?('dn1test/dn1sup_ext_manager')
+         Dn1sup::ExtensionStore.stale?('dn1test/dn1sup_dummy_found') &&
+         Dn1sup::ExtensionStore.stale?('dn1test/dn1sup_save_settings')
+  assert 'apply: живой не stale', !Dn1sup::ExtensionStore.stale?('dn1test/dn1sup_extension_store')
   assert 'apply: кэш релизов мёртвого почищен',
-         Dn1sup::ExtManager.instance_variable_get(:@releases_cache).none? { |repo, _| repo == 'dn1test/dn1sup_dummy_found' }
+         Dn1sup::ExtensionStore.instance_variable_get(:@releases_cache).none? { |repo, _| repo == 'dn1test/dn1sup_dummy_found' }
   assert 'apply: найденная запись мёртвого удалена',
-         Dn1sup::ExtManager.instance_variable_get(:@discovered_entries).none? { |e| e['repo'] == 'dn1test/dn1sup_dummy_found' }
+         Dn1sup::ExtensionStore.instance_variable_get(:@discovered_entries).none? { |e| e['repo'] == 'dn1test/dn1sup_dummy_found' }
 
-  products = Dn1sup::ExtManager.collect_products_data(false, check_releases: false)
+  products = Dn1sup::ExtensionStore.collect_products_data(false, check_releases: false)
   assert 'collect: неустановленное с мёртвым репо скрыто', products.none? { |p| p['id'] == 'dn1sup_dummy_found' }
   ss = products.find { |p| p['id'] == 'dn1sup_save_settings' }
   assert 'collect: установленное с переименованным репо осталось с пометкой',
          !!ss && ss['repo_status'] == 'renamed' && ss['is_installed'] == true && ss['has_update'] == false,
          ss&.slice('repo_status', 'has_update').inspect
-  em = products.find { |p| p['id'] == 'dn1sup_ext_manager' }
+  em = products.find { |p| p['id'] == 'dn1sup_extension_store' }
   assert 'collect: живое расширение без пометки', !!em && em['repo_status'].to_s.empty?
 
-  res = Dn1sup::ExtManager.perform_install('dn1sup_save_settings')
+  res = Dn1sup::ExtensionStore.perform_install('dn1sup_save_settings')
   assert 'install: мёртвый репо отклонён без сети', res['ok'] == false && res['error'].to_s.include?('недоступен'), res.inspect
 
-  Dn1sup::ExtManager.apply_repo_status(
+  Dn1sup::ExtensionStore.apply_repo_status(
     'dn1test/dn1sup_save_settings' => { exists: true, repo: 'dn1test/dn1sup_save_settings', renamed: false }
   )
-  assert 'apply: вернувшийся репозиторий перестаёт быть stale', !Dn1sup::ExtManager.stale?('dn1test/dn1sup_save_settings')
+  assert 'apply: вернувшийся репозиторий перестаёт быть stale', !Dn1sup::ExtensionStore.stale?('dn1test/dn1sup_save_settings')
 ensure
-  Dn1sup::ExtManager.instance_variable_set(:@stale_repos, {})
-  Dn1sup::ExtManager.instance_variable_set(:@discovered_entries, [])
-  Dn1sup::ExtManager.instance_variable_set(:@release_cache, {})
-  Dn1sup::ExtManager.instance_variable_set(:@releases_cache, {})
-  Dn1sup::ExtManager.instance_variable_set(:@commits_cache, {})
-  Sketchup.write_default('DN1Sup ExtManager', 'installed_dn1sup_save_settings', nil)
+  Dn1sup::ExtensionStore.instance_variable_set(:@stale_repos, {})
+  Dn1sup::ExtensionStore.instance_variable_set(:@discovered_entries, [])
+  Dn1sup::ExtensionStore.instance_variable_set(:@release_cache, {})
+  Dn1sup::ExtensionStore.instance_variable_set(:@releases_cache, {})
+  Dn1sup::ExtensionStore.instance_variable_set(:@commits_cache, {})
+  Sketchup.write_default('DN1Sup ExtensionStore', 'installed_dn1sup_save_settings', nil)
 end
 
 begin
   # --- снапшот v5: статусы репозиториев и каталог переживают перезапуск ----
-  Dn1sup::ExtManager.instance_variable_set(
+  Dn1sup::ExtensionStore.instance_variable_set(
     :@stale_repos,
     { 'dn1test/dn1sup_dummy_found' => { 'status' => 'gone', 'renamed_to' => '', 'checked_at' => 1_700_000_000 } }
   )
-  Dn1sup::ExtManager.instance_variable_set(
+  Dn1sup::ExtensionStore.instance_variable_set(
     :@remote_registry,
     [{ 'id' => 'dn1sup_dummy_remote', 'name' => 'Remote', 'description' => 'свежее с GitHub',
        'repo' => 'dn1test/dn1sup_dummy_remote', 'version' => '1.2.0' }]
   )
-  Dn1sup::ExtManager.instance_variable_set(
+  Dn1sup::ExtensionStore.instance_variable_set(
     :@registry_meta_cache,
     { 'dn1sup_save_settings' => { 'data' => { 'id' => 'dn1sup_save_settings', 'repo' => 'dn1test/dn1sup_save_settings',
                                               'description' => 'свежее описание из репозитория' }, 'at' => 1_700_000_001 } }
   )
-  Dn1sup::ExtManager.save_release_snapshot
-  data = JSON.parse(File.read(Dn1sup::ExtManager.snapshot_path))
+  Dn1sup::ExtensionStore.save_release_snapshot
+  data = JSON.parse(File.read(Dn1sup::ExtensionStore.snapshot_path))
   assert 'снапшот v5: версия, stale и каталог',
          data['version'] == 5 && data['stale'].is_a?(Hash) &&
          data['stale']['dn1test/dn1sup_dummy_found']['status'] == 'gone' &&
          data['remote_registry'].is_a?(Array) && data['registry_meta'].is_a?(Hash), "version=#{data['version']}"
 
-  Dn1sup::ExtManager.instance_variable_set(:@stale_repos, {})
-  Dn1sup::ExtManager.instance_variable_set(:@release_cache, {})
-  Dn1sup::ExtManager.instance_variable_set(:@releases_cache, {})
-  Dn1sup::ExtManager.instance_variable_set(:@remote_registry, [])
-  Dn1sup::ExtManager.instance_variable_set(:@registry_meta_cache, {})
-  Dn1sup::ExtManager.load_release_snapshot
+  Dn1sup::ExtensionStore.instance_variable_set(:@stale_repos, {})
+  Dn1sup::ExtensionStore.instance_variable_set(:@release_cache, {})
+  Dn1sup::ExtensionStore.instance_variable_set(:@releases_cache, {})
+  Dn1sup::ExtensionStore.instance_variable_set(:@remote_registry, [])
+  Dn1sup::ExtensionStore.instance_variable_set(:@registry_meta_cache, {})
+  Dn1sup::ExtensionStore.load_release_snapshot
   assert 'снапшот v5: stale восстановлен',
-         Dn1sup::ExtManager.instance_variable_get(:@stale_repos)['dn1test/dn1sup_dummy_found']['status'] == 'gone'
+         Dn1sup::ExtensionStore.instance_variable_get(:@stale_repos)['dn1test/dn1sup_dummy_found']['status'] == 'gone'
   assert 'снапшот v5: remote_registry восстановлен',
-         Dn1sup::ExtManager.instance_variable_get(:@remote_registry).any? { |e| e['id'] == 'dn1sup_dummy_remote' }
+         Dn1sup::ExtensionStore.instance_variable_get(:@remote_registry).any? { |e| e['id'] == 'dn1sup_dummy_remote' }
   assert 'снапшот v5: registry_meta восстановлен',
-         Dn1sup::ExtManager.instance_variable_get(:@registry_meta_cache)['dn1sup_save_settings']['data']['description'] == 'свежее описание из репозитория'
+         Dn1sup::ExtensionStore.instance_variable_get(:@registry_meta_cache)['dn1sup_save_settings']['data']['description'] == 'свежее описание из репозитория'
 
   # Самовосстановление: discovered-запись мёртвого репозитория из снапшота
   # (например, записанная версией без stale-логики) не resurrect-ится.
   data['discovered'] = [discovered_fixture[0]]
-  File.write(Dn1sup::ExtManager.snapshot_path, JSON.generate(data))
-  Dn1sup::ExtManager.instance_variable_set(:@discovered_entries, [])
-  Dn1sup::ExtManager.instance_variable_set(:@stale_repos, {})
-  Dn1sup::ExtManager.instance_variable_set(:@release_cache, {})
-  Dn1sup::ExtManager.instance_variable_set(:@releases_cache, {})
-  Dn1sup::ExtManager.load_release_snapshot
+  File.write(Dn1sup::ExtensionStore.snapshot_path, JSON.generate(data))
+  Dn1sup::ExtensionStore.instance_variable_set(:@discovered_entries, [])
+  Dn1sup::ExtensionStore.instance_variable_set(:@stale_repos, {})
+  Dn1sup::ExtensionStore.instance_variable_set(:@release_cache, {})
+  Dn1sup::ExtensionStore.instance_variable_set(:@releases_cache, {})
+  Dn1sup::ExtensionStore.load_release_snapshot
   assert 'снапшот: discovered мёртвого репо не восстановлен',
-         Dn1sup::ExtManager.merged_entries.none? { |e| e['id'] == 'dn1sup_dummy_found' }
+         Dn1sup::ExtensionStore.merged_entries.none? { |e| e['id'] == 'dn1sup_dummy_found' }
   data['discovered'] = []
 
   # Дедупликация discovered при загрузке снапшота: испорченные исторические
   # снапшоты (многократные копии одной записи) самолечатся
-  Dn1sup::ExtManager.instance_variable_set(:@discovered_entries, [])
-  Dn1sup::ExtManager.instance_variable_set(:@stale_repos, {})
-  Dn1sup::ExtManager.instance_variable_set(:@release_cache, {})
-  Dn1sup::ExtManager.instance_variable_set(:@releases_cache, {})
+  Dn1sup::ExtensionStore.instance_variable_set(:@discovered_entries, [])
+  Dn1sup::ExtensionStore.instance_variable_set(:@stale_repos, {})
+  Dn1sup::ExtensionStore.instance_variable_set(:@release_cache, {})
+  Dn1sup::ExtensionStore.instance_variable_set(:@releases_cache, {})
   data['stale'] = {}
-  data['version'] = Dn1sup::ExtManager::SNAPSHOT_VERSION
+  data['version'] = Dn1sup::ExtensionStore::SNAPSHOT_VERSION
   data['discovered'] = Array.new(6) { discovered_fixture[0].dup }
-  File.write(Dn1sup::ExtManager.snapshot_path, JSON.generate(data))
-  Dn1sup::ExtManager.load_release_snapshot
-  loaded_disc = Dn1sup::ExtManager.instance_variable_get(:@discovered_entries)
+  File.write(Dn1sup::ExtensionStore.snapshot_path, JSON.generate(data))
+  Dn1sup::ExtensionStore.load_release_snapshot
+  loaded_disc = Dn1sup::ExtensionStore.instance_variable_get(:@discovered_entries)
   assert 'снапшот: дубли discovered схлопнуты при загрузке', loaded_disc.size == 1
-  Dn1sup::ExtManager.save_release_snapshot
-  clean = JSON.parse(File.read(Dn1sup::ExtManager.snapshot_path))
+  Dn1sup::ExtensionStore.save_release_snapshot
+  clean = JSON.parse(File.read(Dn1sup::ExtensionStore.snapshot_path))
   assert 'снапшот: перезаписывается чистыми данными', clean['discovered'].size == 1
   data['discovered'] = []
 
@@ -617,50 +617,50 @@ begin
   data.delete('remote_registry')
   data.delete('registry_meta')
   data['version'] = 4
-  File.write(Dn1sup::ExtManager.snapshot_path, JSON.generate(data))
-  Dn1sup::ExtManager.instance_variable_set(:@stale_repos, {})
-  Dn1sup::ExtManager.instance_variable_set(:@release_cache, {})
-  Dn1sup::ExtManager.instance_variable_set(:@releases_cache, {})
-  Dn1sup::ExtManager.instance_variable_set(:@remote_registry, [])
-  Dn1sup::ExtManager.instance_variable_set(:@registry_meta_cache, {})
-  Dn1sup::ExtManager.load_release_snapshot
+  File.write(Dn1sup::ExtensionStore.snapshot_path, JSON.generate(data))
+  Dn1sup::ExtensionStore.instance_variable_set(:@stale_repos, {})
+  Dn1sup::ExtensionStore.instance_variable_set(:@release_cache, {})
+  Dn1sup::ExtensionStore.instance_variable_set(:@releases_cache, {})
+  Dn1sup::ExtensionStore.instance_variable_set(:@remote_registry, [])
+  Dn1sup::ExtensionStore.instance_variable_set(:@registry_meta_cache, {})
+  Dn1sup::ExtensionStore.load_release_snapshot
   assert 'снапшот v4 без каталога читается',
-         Dn1sup::ExtManager.instance_variable_get(:@remote_registry).is_a?(Array) &&
-         Dn1sup::ExtManager.instance_variable_get(:@registry_meta_cache).is_a?(Hash)
+         Dn1sup::ExtensionStore.instance_variable_get(:@remote_registry).is_a?(Array) &&
+         Dn1sup::ExtensionStore.instance_variable_get(:@registry_meta_cache).is_a?(Hash)
 
   # Старый формат v3 (без stale) читается, stale остаётся пустым
   data.delete('stale')
   data['version'] = 3
-  File.write(Dn1sup::ExtManager.snapshot_path, JSON.generate(data))
-  Dn1sup::ExtManager.instance_variable_set(:@stale_repos, {})
-  Dn1sup::ExtManager.instance_variable_set(:@release_cache, {})
-  Dn1sup::ExtManager.instance_variable_set(:@releases_cache, {})
-  Dn1sup::ExtManager.load_release_snapshot
+  File.write(Dn1sup::ExtensionStore.snapshot_path, JSON.generate(data))
+  Dn1sup::ExtensionStore.instance_variable_set(:@stale_repos, {})
+  Dn1sup::ExtensionStore.instance_variable_set(:@release_cache, {})
+  Dn1sup::ExtensionStore.instance_variable_set(:@releases_cache, {})
+  Dn1sup::ExtensionStore.load_release_snapshot
   assert 'снапшот v3 без stale читается',
-         Dn1sup::ExtManager.instance_variable_get(:@stale_repos).empty? &&
-         Dn1sup::ExtManager.instance_variable_get(:@releases_cache).is_a?(Hash)
+         Dn1sup::ExtensionStore.instance_variable_get(:@stale_repos).empty? &&
+         Dn1sup::ExtensionStore.instance_variable_get(:@releases_cache).is_a?(Hash)
 ensure
-  Dn1sup::ExtManager.instance_variable_set(:@stale_repos, {})
-  Dn1sup::ExtManager.instance_variable_set(:@release_cache, {})
-  Dn1sup::ExtManager.instance_variable_set(:@releases_cache, {})
-  Dn1sup::ExtManager.instance_variable_set(:@discovered_entries, [])
-  Dn1sup::ExtManager.instance_variable_set(:@commits_cache, {})
-  Dn1sup::ExtManager.instance_variable_set(:@remote_registry, [])
-  Dn1sup::ExtManager.instance_variable_set(:@registry_meta_cache, {})
-  Dn1sup::ExtManager.instance_variable_set(:@remote_registry_at, 0)
+  Dn1sup::ExtensionStore.instance_variable_set(:@stale_repos, {})
+  Dn1sup::ExtensionStore.instance_variable_set(:@release_cache, {})
+  Dn1sup::ExtensionStore.instance_variable_set(:@releases_cache, {})
+  Dn1sup::ExtensionStore.instance_variable_set(:@discovered_entries, [])
+  Dn1sup::ExtensionStore.instance_variable_set(:@commits_cache, {})
+  Dn1sup::ExtensionStore.instance_variable_set(:@remote_registry, [])
+  Dn1sup::ExtensionStore.instance_variable_set(:@registry_meta_cache, {})
+  Dn1sup::ExtensionStore.instance_variable_set(:@remote_registry_at, 0)
 end
 
 # 13d. Каталог обновляется с GitHub и для неустановленных расширений:
 # центральный реестр — основа, per-repo — дополнения поверх (офлайн).
 begin
-  Dn1sup::ExtManager.instance_variable_set(:@remote_registry, [])
-  Dn1sup::ExtManager.instance_variable_set(:@registry_meta_cache, {})
-  Dn1sup::ExtManager.instance_variable_set(:@discovered_entries, [])
-  Dn1sup::ExtManager.instance_variable_set(:@releases_cache, {})
-  Dn1sup::ExtManager.instance_variable_set(:@release_cache, {})
+  Dn1sup::ExtensionStore.instance_variable_set(:@remote_registry, [])
+  Dn1sup::ExtensionStore.instance_variable_set(:@registry_meta_cache, {})
+  Dn1sup::ExtensionStore.instance_variable_set(:@discovered_entries, [])
+  Dn1sup::ExtensionStore.instance_variable_set(:@releases_cache, {})
+  Dn1sup::ExtensionStore.instance_variable_set(:@release_cache, {})
 
   # Центральный remote добавляет новое расширение и обновляет описание.
-  Dn1sup::ExtManager.apply_registry_refresh(
+  Dn1sup::ExtensionStore.apply_registry_refresh(
     [
       { 'id' => 'dn1sup_new_from_github', 'name' => 'New From GitHub',
         'description' => 'новое расширение из центрального реестра', 'repo' => 'dn1test/dn1sup_new_from_github' },
@@ -669,7 +669,7 @@ begin
     ],
     {}
   )
-  merged = Dn1sup::ExtManager.merged_entries
+  merged = Dn1sup::ExtensionStore.merged_entries
   assert 'каталог: центральный remote добавляет запись',
          merged.any? { |e| e['id'] == 'dn1sup_new_from_github' }
   ss = merged.find { |e| e['id'] == 'dn1sup_save_settings' }
@@ -677,38 +677,38 @@ begin
          ss && ss['description'] == 'обновлённое центральное описание'
 
   # Per-repo дополнение точечно обновляет поверх центрального.
-  Dn1sup::ExtManager.apply_registry_refresh(
+  Dn1sup::ExtensionStore.apply_registry_refresh(
     nil,
     { 'dn1sup_save_settings' => { 'id' => 'dn1sup_save_settings', 'repo' => 'dn1test/dn1sup_save_settings',
                                   'description' => 'свежее описание из репозитория расширения' } }
   )
-  ss2 = Dn1sup::ExtManager.merged_entries.find { |e| e['id'] == 'dn1sup_save_settings' }
+  ss2 = Dn1sup::ExtensionStore.merged_entries.find { |e| e['id'] == 'dn1sup_save_settings' }
   assert 'каталог: per-repo дополняет центральный',
          ss2 && ss2['description'] == 'свежее описание из репозитория расширения'
 
   # Пустые поля per-repo bundled/центральные данные не затирают.
-  Dn1sup::ExtManager.apply_registry_refresh(
+  Dn1sup::ExtensionStore.apply_registry_refresh(
     nil,
     { 'dn1sup_save_settings' => { 'id' => 'dn1sup_save_settings', 'repo' => 'dn1test/dn1sup_save_settings',
                                   'description' => '', 'name' => '' } }
   )
-  ss3 = Dn1sup::ExtManager.merged_entries.find { |e| e['id'] == 'dn1sup_save_settings' }
+  ss3 = Dn1sup::ExtensionStore.merged_entries.find { |e| e['id'] == 'dn1sup_save_settings' }
   assert 'каталог: пустые per-repo поля не затирают данные',
          ss3 && ss3['description'] == 'свежее описание из репозитория расширения' && !ss3['name'].to_s.empty?
 
   # Карточка неустановленного строится из свежих данных каталога.
-  card = Dn1sup::ExtManager.collect_products_data(false, check_releases: false)
+  card = Dn1sup::ExtensionStore.collect_products_data(false, check_releases: false)
                              .find { |p| p['id'] == 'dn1sup_save_settings' }
   assert 'карточка неустановленного со свежими данными',
          !!card && card['is_installed'] == false &&
          card['description'] == 'свежее описание из репозитория расширения', card&.slice('description', 'is_installed').inspect
 ensure
-  Dn1sup::ExtManager.instance_variable_set(:@remote_registry, [])
-  Dn1sup::ExtManager.instance_variable_set(:@registry_meta_cache, {})
-  Dn1sup::ExtManager.instance_variable_set(:@remote_registry_at, 0)
-  Dn1sup::ExtManager.instance_variable_set(:@discovered_entries, [])
-  Dn1sup::ExtManager.instance_variable_set(:@release_cache, {})
-  Dn1sup::ExtManager.instance_variable_set(:@releases_cache, {})
+  Dn1sup::ExtensionStore.instance_variable_set(:@remote_registry, [])
+  Dn1sup::ExtensionStore.instance_variable_set(:@registry_meta_cache, {})
+  Dn1sup::ExtensionStore.instance_variable_set(:@remote_registry_at, 0)
+  Dn1sup::ExtensionStore.instance_variable_set(:@discovered_entries, [])
+  Dn1sup::ExtensionStore.instance_variable_set(:@release_cache, {})
+  Dn1sup::ExtensionStore.instance_variable_set(:@releases_cache, {})
 end
 
 # 14. Уровни логирования: краткий прикладной лог + [DEBUG] только при флаге debug
@@ -872,7 +872,7 @@ assert 'releases 404 -> [] (устойчивость)', bad_releases == []
 # 18. Автопоиск: репозитории аккаунта dn1test (живой GitHub)
 owner_repos = Dn1sup::Updater.repos_of_owner('dn1test')
 assert 'repos_of_owner возвращает репозитории', owner_repos.is_a?(Array) && owner_repos.any?, "#{owner_repos.size} репозиториев"
-assert 'repos_of_owner содержит менеджер', owner_repos.any? { |r| r['full_name'] == 'dn1test/dn1sup_ext_manager' }
+assert 'repos_of_owner содержит менеджер', owner_repos.any? { |r| r['full_name'] == 'dn1test/dn1sup_extension_store' }
 assert 'repos_of_owner неизвестный аккаунт -> []', Dn1sup::Updater.repos_of_owner('nonexistent-user-000-zzz') == []
 
 # 19. Лог правок: коммиты между тегами (живой GitHub)
@@ -885,20 +885,20 @@ assert 'compare_commits: несуществующие теги -> []',
 # 20. Реестр без дубликатов + установка/обновление (один id, без dev-двойников)
 # (офлайн: сеть подменяется стабами)
 begin
-  reg = Dn1sup::ExtManager.load_registry
+  reg = Dn1sup::ExtensionStore.load_registry
   ids = reg.map { |e| e['id'].to_s }
   repos = reg.map { |e| e['repo'].to_s }
   assert 'реестр: id уникальны', ids.uniq.size == ids.size, ids.inspect
   assert 'реестр: repo уникальны', repos.uniq.size == repos.size, repos.inspect
   assert 'реестр: покрывает все расширения dn1test',
-         %w[dn1sup_ext_manager dn1sup_time_project dn1sup_create_project
+         %w[dn1sup_extension_store dn1sup_time_project dn1sup_create_project
             dn1sup_autoselect_tag dn1sup_comp_add_view dn1sup_save_settings
             dn1sup_export_3d dn1sup_export_pdf2 dn1sup_sketchup_profiles].all? { |id| ids.include?(id) },
          ids.inspect
   assert 'реестр: без _dev записей', ids.none? { |id| id.end_with?('_dev') }
-  mgr = reg.find { |e| e['id'] == 'dn1sup_ext_manager' }
+  mgr = reg.find { |e| e['id'] == 'dn1sup_extension_store' }
   assert 'реестр: версия менеджера совпадает с лоадером',
-         mgr && mgr['version'].to_s == Dn1sup::ExtManager::VERSION, mgr && mgr['version'].inspect
+         mgr && mgr['version'].to_s == Dn1sup::ExtensionStore::VERSION, mgr && mgr['version'].inspect
 
   fake_release = {
     'tag_name' => 'v9.9.9',
@@ -909,17 +909,17 @@ begin
   Dn1sup::Updater.define_singleton_method(:latest_release) { |*_a| fake_release }
   Dn1sup::Updater.define_singleton_method(:install_from_url) { |*_a, **_k| true }
 
-  res = Dn1sup::ExtManager.perform_install('dn1sup_save_settings')
+  res = Dn1sup::ExtensionStore.perform_install('dn1sup_save_settings')
   assert 'install: ok', res['ok'] == true, res.inspect
   assert 'install: сообщение без dev-пометки', !res['message'].to_s.include?('Dev-вариант')
   assert 'install: без флага dev_replaced', !res.key?('dev_replaced')
 
-  upd = Dn1sup::ExtManager.perform_update('dn1sup_save_settings')
+  upd = Dn1sup::ExtensionStore.perform_update('dn1sup_save_settings')
   assert 'update: делегирует install', upd['ok'] == true, upd.inspect
 ensure
   Dn1sup::Updater.define_singleton_method(:latest_release, orig_latest)
   Dn1sup::Updater.define_singleton_method(:install_from_url, orig_install)
-  Sketchup.write_default('DN1Sup ExtManager', 'installed_dn1sup_save_settings', nil)
+  Sketchup.write_default('DN1Sup ExtensionStore', 'installed_dn1sup_save_settings', nil)
 end
 
 # 21. dev_source?: self-update отключён для рабочей копии (один id + reload)
@@ -933,91 +933,91 @@ end
 
 # 22. Кнопка «Обновить»: сводка sync, единый предлагаемый релиз, guard
 begin
-  assert 'REPO_CHECK_TTL задан для экономии квоты', Dn1sup::ExtManager::REPO_CHECK_TTL.to_i >= 60
+  assert 'REPO_CHECK_TTL задан для экономии квоты', Dn1sup::ExtensionStore::REPO_CHECK_TTL.to_i >= 60
 
   # offered_release: список релизов приоритетнее одиночного /latest
   orig_releases = Dn1sup::Updater.method(:releases)
   orig_latest2 = Dn1sup::Updater.method(:latest_release)
-  Dn1sup::ExtManager.instance_variable_set(:@releases_cache, {})
-  Dn1sup::ExtManager.instance_variable_set(:@release_cache, {})
+  Dn1sup::ExtensionStore.instance_variable_set(:@releases_cache, {})
+  Dn1sup::ExtensionStore.instance_variable_set(:@release_cache, {})
   Dn1sup::Updater.define_singleton_method(:releases) do |*_a, **_k|
     [{ 'tag_name' => 'v2.0.0', 'published_at' => '2026-10-10T00:00:00Z', 'assets' => [] }]
   end
   Dn1sup::Updater.define_singleton_method(:latest_release) { |*_a| { 'tag_name' => 'v9.9.9', 'assets' => [] } }
-  off = Dn1sup::ExtManager.offered_release('o/r', true)
+  off = Dn1sup::ExtensionStore.offered_release('o/r', true)
   assert 'offered_release: список важнее одиночного latest', off && off['tag_name'] == 'v2.0.0', off.inspect
   Dn1sup::Updater.define_singleton_method(:releases) { |*_a, **_k| [] }
-  Dn1sup::ExtManager.instance_variable_set(:@releases_cache, {})
-  Dn1sup::ExtManager.instance_variable_set(:@release_cache, {})
-  off2 = Dn1sup::ExtManager.offered_release('o/r', true)
+  Dn1sup::ExtensionStore.instance_variable_set(:@releases_cache, {})
+  Dn1sup::ExtensionStore.instance_variable_set(:@release_cache, {})
+  off2 = Dn1sup::ExtensionStore.offered_release('o/r', true)
   assert 'offered_release: пустой список — фолбэк на latest', off2 && off2['tag_name'] == 'v9.9.9', off2.inspect
   Dn1sup::Updater.define_singleton_method(:releases, orig_releases)
   Dn1sup::Updater.define_singleton_method(:latest_release, orig_latest2)
-  Dn1sup::ExtManager.instance_variable_set(:@releases_cache, {})
-  Dn1sup::ExtManager.instance_variable_set(:@release_cache, {})
+  Dn1sup::ExtensionStore.instance_variable_set(:@releases_cache, {})
+  Dn1sup::ExtensionStore.instance_variable_set(:@release_cache, {})
 
   # has_asset: релиз без .rbz помечается для UI
-  Dn1sup::ExtManager.instance_variable_set(
+  Dn1sup::ExtensionStore.instance_variable_set(
     :@releases_cache,
     'dn1test/dn1sup_save_settings' => [
       { 'tag_name' => 'v9.9.9', 'published_at' => '2026-10-10T00:00:00Z', 'assets' => [] }
     ]
   )
-  no_asset = Dn1sup::ExtManager.collect_products_data(false, check_releases: false)
+  no_asset = Dn1sup::ExtensionStore.collect_products_data(false, check_releases: false)
                                      .find { |p| p['id'] == 'dn1sup_save_settings' }
   assert 'collect: релиз без .rbz — has_asset false', !!no_asset && no_asset['has_asset'] == false, no_asset.inspect
-  Dn1sup::ExtManager.instance_variable_set(
+  Dn1sup::ExtensionStore.instance_variable_set(
     :@releases_cache,
     'dn1test/dn1sup_save_settings' => [
       { 'tag_name' => 'v9.9.9', 'published_at' => '2026-10-10T00:00:00Z',
         'assets' => [{ 'name' => 'dn1sup_save_settings.rbz', 'browser_download_url' => 'https://example.com/x.rbz' }] }
     ]
   )
-  with_asset = Dn1sup::ExtManager.collect_products_data(false, check_releases: false)
+  with_asset = Dn1sup::ExtensionStore.collect_products_data(false, check_releases: false)
                                         .find { |p| p['id'] == 'dn1sup_save_settings' }
   assert 'collect: релиз с .rbz — has_asset true', !!with_asset && with_asset['has_asset'] == true, with_asset.inspect
-  Dn1sup::ExtManager.instance_variable_set(:@releases_cache, {})
-  Dn1sup::ExtManager.instance_variable_set(:@release_cache, {})
+  Dn1sup::ExtensionStore.instance_variable_set(:@releases_cache, {})
+  Dn1sup::ExtensionStore.instance_variable_set(:@release_cache, {})
 
   # push_state несёт сводку sync (счётчик «проверено X/Y» для кнопки)
   dlg2 = FakeStoreDialog.new
-  Dn1sup::ExtManager.instance_variable_set(:@fetching, false)
-  Dn1sup::ExtManager.instance_variable_set(:@pending_force, false)
-  Dn1sup::ExtManager.instance_variable_set(:@sync_status,
+  Dn1sup::ExtensionStore.instance_variable_set(:@fetching, false)
+  Dn1sup::ExtensionStore.instance_variable_set(:@pending_force, false)
+  Dn1sup::ExtensionStore.instance_variable_set(:@sync_status,
                                            { 'fetching' => false, 'fetched' => 7, 'total' => 9,
                                              'failed' => ['o/a'], 'checked_at' => 1_700_000_000,
                                              'snapshot_saved_at' => 1_699_999_000 })
   dlg2.scripts.clear
-  Dn1sup::ExtManager.push_state(dlg2, [])
+  Dn1sup::ExtensionStore.push_state(dlg2, [])
   sync_script = dlg2.scripts.grep(/\Awindow\.pushState\(/).last.to_s
   assert 'push_state содержит sync', sync_script.include?('"sync":'), sync_script[0, 160]
   assert 'push_state sync: счётчик fetched/total', sync_script.include?('"fetched":7') && sync_script.include?('"total":9'), sync_script[0, 200]
-  Dn1sup::ExtManager.instance_variable_set(:@sync_status,
+  Dn1sup::ExtensionStore.instance_variable_set(:@sync_status,
                                            { 'fetching' => false, 'fetched' => 0, 'total' => 0,
                                              'failed' => [], 'checked_at' => 0, 'snapshot_saved_at' => 0 })
 
   # seed_installed_at_baseline: ручной установке ставится базовая дата
   Sketchup.write_default('Dn1supUpdater', 'installed_at_dn1sup_save_settings', nil)
-  Dn1sup::ExtManager.seed_installed_at_baseline([{ 'id' => 'dn1sup_save_settings', 'is_installed' => true }])
+  Dn1sup::ExtensionStore.seed_installed_at_baseline([{ 'id' => 'dn1sup_save_settings', 'is_installed' => true }])
   assert 'seed: базовая дата установки ставится', !Dn1sup::Updater.installed_at('dn1sup_save_settings').nil?
   Sketchup.write_default('Dn1supUpdater', 'installed_at_dn1sup_save_settings', nil)
 
   # guard: повторный refresh во время обхода коалесцируется
   dlg3 = FakeStoreDialog.new
-  Dn1sup::ExtManager.instance_variable_set(:@dialog, dlg3)
-  Dn1sup::ExtManager.instance_variable_set(:@fetching, true)
-  Dn1sup::ExtManager.instance_variable_set(:@pending_force, false)
-  Dn1sup::ExtManager.send_products_to_dialog(force: true)
-  assert 'guard: повторный force коалесцирован', Dn1sup::ExtManager.instance_variable_get(:@pending_force) == true
-  Dn1sup::ExtManager.instance_variable_set(:@fetching, false)
-  Dn1sup::ExtManager.instance_variable_set(:@pending_force, false)
-  Dn1sup::ExtManager.instance_variable_set(:@dialog, nil)
+  Dn1sup::ExtensionStore.instance_variable_set(:@dialog, dlg3)
+  Dn1sup::ExtensionStore.instance_variable_set(:@fetching, true)
+  Dn1sup::ExtensionStore.instance_variable_set(:@pending_force, false)
+  Dn1sup::ExtensionStore.send_products_to_dialog(force: true)
+  assert 'guard: повторный force коалесцирован', Dn1sup::ExtensionStore.instance_variable_get(:@pending_force) == true
+  Dn1sup::ExtensionStore.instance_variable_set(:@fetching, false)
+  Dn1sup::ExtensionStore.instance_variable_set(:@pending_force, false)
+  Dn1sup::ExtensionStore.instance_variable_set(:@dialog, nil)
 ensure
-  Dn1sup::ExtManager.instance_variable_set(:@releases_cache, {})
-  Dn1sup::ExtManager.instance_variable_set(:@release_cache, {})
-  Dn1sup::ExtManager.instance_variable_set(:@fetching, false)
-  Dn1sup::ExtManager.instance_variable_set(:@pending_force, false)
-  Dn1sup::ExtManager.instance_variable_set(:@dialog, nil)
+  Dn1sup::ExtensionStore.instance_variable_set(:@releases_cache, {})
+  Dn1sup::ExtensionStore.instance_variable_set(:@release_cache, {})
+  Dn1sup::ExtensionStore.instance_variable_set(:@fetching, false)
+  Dn1sup::ExtensionStore.instance_variable_set(:@pending_force, false)
+  Dn1sup::ExtensionStore.instance_variable_set(:@dialog, nil)
 end
 
 # 23. Выбор свежайшей версии (только GitHub) и проверка карточки
@@ -1066,53 +1066,53 @@ begin
   orig_latest3 = Dn1sup::Updater.method(:latest_release)
   Dn1sup::Updater.define_singleton_method(:releases) { |*_a, **_k| [] }
   Dn1sup::Updater.define_singleton_method(:latest_release) { |*_a| {} }
-  Dn1sup::ExtManager.instance_variable_set(:@release_cache, {})
-  Dn1sup::ExtManager.instance_variable_set(:@releases_cache, {})
+  Dn1sup::ExtensionStore.instance_variable_set(:@release_cache, {})
+  Dn1sup::ExtensionStore.instance_variable_set(:@releases_cache, {})
 
   # Релизы GitHub недоступны — честная ошибка (локальных источников больше нет)
-  res = Dn1sup::ExtManager.perform_check_update('dn1sup_save_settings')
+  res = Dn1sup::ExtensionStore.perform_check_update('dn1sup_save_settings')
   assert 'check_update: релизы недоступны — ok:false', res['ok'] == false, res.inspect
 
   # Дата/время: та же версия, но релиз GitHub свежее установки — обновление;
   # релиз старее установки — «актуальная версия» (без переустановки).
   begin
     date_id = 'dn1sup_save_settings'
-    saved_lists = Dn1sup::ExtManager.instance_variable_get(:@releases_cache)
-    saved_cache = Dn1sup::ExtManager.instance_variable_get(:@release_cache)
+    saved_lists = Dn1sup::ExtensionStore.instance_variable_get(:@releases_cache)
+    saved_cache = Dn1sup::ExtensionStore.instance_variable_get(:@release_cache)
     orig_install_url = Dn1sup::Updater.method(:install_from_url)
     Dn1sup::Updater.define_singleton_method(:releases) do |*_a, **_k|
       [{ 'tag_name' => 'v1.0.0', 'published_at' => '2026-10-09T00:00:00Z',
          'assets' => [{ 'name' => 'dn1sup_save_settings.rbz', 'browser_download_url' => 'https://example.com/x.rbz' }] }]
     end
     Dn1sup::Updater.define_singleton_method(:install_from_url) { |*_a, **_k| true }
-    Sketchup.write_default('DN1Sup ExtManager', "installed_#{date_id}", '1.0.0')
+    Sketchup.write_default('DN1Sup ExtensionStore', "installed_#{date_id}", '1.0.0')
     Sketchup.write_default('Dn1supUpdater', "installed_at_#{date_id}", 1_600_000_000)
-    Dn1sup::ExtManager.instance_variable_set(:@releases_cache, {})
-    Dn1sup::ExtManager.instance_variable_set(:@release_cache, {})
-    res = Dn1sup::ExtManager.perform_check_update(date_id)
+    Dn1sup::ExtensionStore.instance_variable_set(:@releases_cache, {})
+    Dn1sup::ExtensionStore.instance_variable_set(:@release_cache, {})
+    res = Dn1sup::ExtensionStore.perform_check_update(date_id)
     assert 'check_update: та же версия, релиз свежее — обновление', res['ok'] == true, res.inspect
     Sketchup.write_default('Dn1supUpdater', "installed_at_#{date_id}", 1_900_000_000)
-    Dn1sup::ExtManager.instance_variable_set(:@releases_cache, {})
-    Dn1sup::ExtManager.instance_variable_set(:@release_cache, {})
-    res = Dn1sup::ExtManager.perform_check_update(date_id)
+    Dn1sup::ExtensionStore.instance_variable_set(:@releases_cache, {})
+    Dn1sup::ExtensionStore.instance_variable_set(:@release_cache, {})
+    res = Dn1sup::ExtensionStore.perform_check_update(date_id)
     assert 'check_update: та же версия, релиз старее — актуальная',
            res['ok'] == true && res['message'].to_s.include?('актуальная'), res.inspect
   ensure
     Dn1sup::Updater.define_singleton_method(:install_from_url, orig_install_url)
     Dn1sup::Updater.define_singleton_method(:releases) { |*_a, **_k| [] }
-    Dn1sup::ExtManager.instance_variable_set(:@releases_cache, saved_lists)
-    Dn1sup::ExtManager.instance_variable_set(:@release_cache, saved_cache)
-    Sketchup.write_default('DN1Sup ExtManager', 'installed_dn1sup_save_settings', nil)
+    Dn1sup::ExtensionStore.instance_variable_set(:@releases_cache, saved_lists)
+    Dn1sup::ExtensionStore.instance_variable_set(:@release_cache, saved_cache)
+    Sketchup.write_default('DN1Sup ExtensionStore', 'installed_dn1sup_save_settings', nil)
     Sketchup.write_default('Dn1supUpdater', 'installed_at_dn1sup_save_settings', nil)
   end
 
-  prods = Dn1sup::ExtManager.collect_products_data(false, check_releases: false)
+  prods = Dn1sup::ExtensionStore.collect_products_data(false, check_releases: false)
   assert 'collect: карточки без dev-полей читаются', prods.is_a?(Array), prods.inspect
 ensure
   Dn1sup::Updater.define_singleton_method(:releases, orig_releases3)
   Dn1sup::Updater.define_singleton_method(:latest_release, orig_latest3)
-  Dn1sup::ExtManager.instance_variable_set(:@release_cache, {})
-  Dn1sup::ExtManager.instance_variable_set(:@releases_cache, {})
+  Dn1sup::ExtensionStore.instance_variable_set(:@release_cache, {})
+  Dn1sup::ExtensionStore.instance_variable_set(:@releases_cache, {})
 end
 
 # 24. Смешанные копии апдейтера в Plugins: старый модуль в памяти не роняет
@@ -1174,7 +1174,7 @@ begin
 
   # Фолбэк без догрузки (bundled-версия 0 — load пропускается): установка
   # идёт по старому поведению, исключений нет.
-  Dn1sup::ExtManager.instance_variable_set(:@bundled_updater_version, 0)
+  Dn1sup::ExtensionStore.instance_variable_set(:@bundled_updater_version, 0)
   orig_releases24 = Dn1sup::Updater.method(:releases)
   orig_latest24 = Dn1sup::Updater.method(:latest_release)
   fake_release24 = {
@@ -1183,18 +1183,18 @@ begin
   }
   Dn1sup::Updater.define_singleton_method(:releases) { |*_a, **_k| [] }
   Dn1sup::Updater.define_singleton_method(:latest_release) { |*_a| fake_release24 }
-  res = Dn1sup::ExtManager.perform_install('dn1sup_save_settings')
+  res = Dn1sup::ExtensionStore.perform_install('dn1sup_save_settings')
   assert 'install против старого апдейтера: ok без исключения', res['ok'] == true, res.inspect
   assert 'install против старого апдейтера: без тоста про исключение',
          !res['error'].to_s.include?('Исключение'), res.inspect
   Dn1sup::Updater.define_singleton_method(:releases, orig_releases24)
   Dn1sup::Updater.define_singleton_method(:latest_release, orig_latest24)
-  Sketchup.write_default('DN1Sup ExtManager', 'installed_dn1sup_save_settings', nil)
+  Sketchup.write_default('DN1Sup ExtensionStore', 'installed_dn1sup_save_settings', nil)
 
   # Самолечение: ensure_updater! догружает bundled-копию менеджера (v5),
   # kwargs-вызовы снова работают в полную силу (с датами).
-  Dn1sup::ExtManager.send(:remove_instance_variable, :@bundled_updater_version)
-  Dn1sup::ExtManager.ensure_updater!
+  Dn1sup::ExtensionStore.send(:remove_instance_variable, :@bundled_updater_version)
+  Dn1sup::ExtensionStore.ensure_updater!
   assert 'ensure_updater!: версия модуля — 5',
          defined?(Dn1sup::Updater::UPDATER_VERSION) && Dn1sup::Updater::UPDATER_VERSION.to_i == 5
   assert 'ensure_updater!: kwargs снова принимаются',
@@ -1208,15 +1208,15 @@ ensure
   Dn1sup::Updater.define_singleton_method(:product_status, orig_status24)
   Dn1sup::Updater.define_singleton_method(:install_from_url, orig_install_url24)
   Dn1sup::Updater.define_singleton_method(:local_dev_mtime, orig_mtime24)
-  Sketchup.write_default('DN1Sup ExtManager', 'installed_dn1sup_save_settings', nil)
+  Sketchup.write_default('DN1Sup ExtensionStore', 'installed_dn1sup_save_settings', nil)
 end
 
 # 25. Кнопка «Перезапустить SketchUp» в шапке: вопрос + рестарт с тем же файлом
 begin
   # Без активной модели — вопрос про пустую сцену, без исключений
   assert 'restart_confirm_message без модели — про пустую сцену',
-         Dn1sup::ExtManager.restart_confirm_message.include?('пустая сцена'),
-         Dn1sup::ExtManager.restart_confirm_message
+         Dn1sup::ExtensionStore.restart_confirm_message.include?('пустая сцена'),
+         Dn1sup::ExtensionStore.restart_confirm_message
 
   # С открытым файлом — вопрос содержит его путь (с пробелом и кириллицей,
   # как живой кейс «Тестовый файл.skp»: регрессия 0.22.3 — обрезка по пробелу)
@@ -1224,15 +1224,15 @@ begin
   def fake_model.path; 'C:/docs/Тестовый файл.skp'; end
   Sketchup.define_singleton_method(:active_model) { fake_model }
   assert 'restart_confirm_message с файлом — содержит путь',
-         Dn1sup::ExtManager.restart_confirm_message.include?('C:/docs/Тестовый файл.skp'),
-         Dn1sup::ExtManager.restart_confirm_message
+         Dn1sup::ExtensionStore.restart_confirm_message.include?('C:/docs/Тестовый файл.skp'),
+         Dn1sup::ExtensionStore.restart_confirm_message
 
   # Поиск exe не роняет код (строка или nil)
-  exe_probe = Dn1sup::ExtManager.sketchup_exe_path
+  exe_probe = Dn1sup::ExtensionStore.sketchup_exe_path
   assert 'sketchup_exe_path — строка или nil', exe_probe.nil? || exe_probe.is_a?(String), exe_probe.inspect
 
   # Без Sketchup.quit — честная ошибка, без исключений
-  res = Dn1sup::ExtManager.perform_restart
+  res = Dn1sup::ExtensionStore.perform_restart
   assert 'perform_restart без Sketchup.quit — ok:false', res['ok'] == false, res.inspect
 
   # С quit, но без exe — quit НЕ вызывается, ошибка про SketchUp.exe.
@@ -1240,21 +1240,21 @@ begin
   # найдут настоящий exe и тест попытается его запустить.)
   $quit_called = false
   Sketchup.define_singleton_method(:quit) { $quit_called = true }
-  orig_exe_path = Dn1sup::ExtManager.method(:sketchup_exe_path)
-  Dn1sup::ExtManager.define_singleton_method(:sketchup_exe_path) { nil }
-  res = Dn1sup::ExtManager.perform_restart
+  orig_exe_path = Dn1sup::ExtensionStore.method(:sketchup_exe_path)
+  Dn1sup::ExtensionStore.define_singleton_method(:sketchup_exe_path) { nil }
+  res = Dn1sup::ExtensionStore.perform_restart
   assert 'perform_restart без exe — ok:false про SketchUp.exe',
          res['ok'] == false && res['error'].to_s.include?('SketchUp.exe'), res.inspect
   assert 'perform_restart без exe — quit не вызван', $quit_called == false
-  Dn1sup::ExtManager.define_singleton_method(:sketchup_exe_path, orig_exe_path)
+  Dn1sup::ExtensionStore.define_singleton_method(:sketchup_exe_path, orig_exe_path)
 
   # Счастливый путь: watcher запланирован, quit вызван, скрипт ждёт PID
   # и поднимает тот же exe с тем же файлом (гонка 0.22.2 — «файл занят»).
   $system_cmd = nil
-  orig_exe = Dn1sup::ExtManager.method(:sketchup_exe_path)
-  Dn1sup::ExtManager.define_singleton_method(:sketchup_exe_path) { 'C:/fake/SketchUp.exe' }
-  Dn1sup::ExtManager.define_singleton_method(:system) { |*a| $system_cmd = a; true }
-  res = Dn1sup::ExtManager.perform_restart
+  orig_exe = Dn1sup::ExtensionStore.method(:sketchup_exe_path)
+  Dn1sup::ExtensionStore.define_singleton_method(:sketchup_exe_path) { 'C:/fake/SketchUp.exe' }
+  Dn1sup::ExtensionStore.define_singleton_method(:system) { |*a| $system_cmd = a; true }
+  res = Dn1sup::ExtensionStore.perform_restart
   assert 'perform_restart с exe — ok:true', res['ok'] == true, res.inspect
   assert 'perform_restart — quit вызван', $quit_called == true
   assert 'perform_restart — запуск через detached powershell-watcher',
@@ -1274,15 +1274,15 @@ begin
          watcher_src[0, 300]
   assert 'watcher — без выхода процесса запуска нет (отмена в диалоге сохранения)',
          watcher_src.include?('if ($gone)'), watcher_src[0, 300]
-  Dn1sup::ExtManager.define_singleton_method(:sketchup_exe_path, orig_exe)
-  Dn1sup::ExtManager.singleton_class.send(:remove_method, :system)
+  Dn1sup::ExtensionStore.define_singleton_method(:sketchup_exe_path, orig_exe)
+  Dn1sup::ExtensionStore.singleton_class.send(:remove_method, :system)
   FileUtils.rm_f(watcher_path) if watcher_path
 
   # Диспетчер: confirm_restart — нативный вопрос, pushResult с ok
   store_dlg25 = FakeStoreDialog.new
-  Dn1sup::ExtManager.instance_variable_set(:@dialog, store_dlg25)
+  Dn1sup::ExtensionStore.instance_variable_set(:@dialog, store_dlg25)
   $dialog_log.clear
-  Dn1sup::ExtManager.dispatch(store_dlg25, 'confirm_restart', '')
+  Dn1sup::ExtensionStore.dispatch(store_dlg25, 'confirm_restart', '')
   conf25 = store_dlg25.scripts.grep(/window\.pushResult\(/).last
   assert 'dispatch confirm_restart -> pushResult(confirm_restart)',
          !!conf25 && conf25.include?('confirm_restart'), conf25.to_s[0, 160]
@@ -1296,13 +1296,13 @@ begin
   def unsaved.saved_to; @saved_to; end
   def unsaved.save(p); @saved_to = p; true; end
   Sketchup.define_singleton_method(:active_model) { unsaved }
-  assert 'model_needs_first_save? — новая грязная сцена', Dn1sup::ExtManager.model_needs_first_save? == true
+  assert 'model_needs_first_save? — новая грязная сцена', Dn1sup::ExtensionStore.model_needs_first_save? == true
   # Отмена — рестарт прерван, ok:false
   $messagebox_queue = [IDCANCEL]
   $savepanel_result = nil
   store_dlg25.scripts.clear
   $dialog_log.clear
-  Dn1sup::ExtManager.dispatch(store_dlg25, 'confirm_restart', '')
+  Dn1sup::ExtensionStore.dispatch(store_dlg25, 'confirm_restart', '')
   conf_cancel = store_dlg25.scripts.grep(/window\.pushResult\(/).last
   assert 'confirm_restart Отмена — ok:false', !!conf_cancel && conf_cancel.include?('"ok":false'), conf_cancel.to_s[0, 200]
   assert 'confirm_restart Отмена — спросили про сохранение',
@@ -1314,7 +1314,7 @@ begin
   unsaved.instance_variable_set(:@saved_to, '')
   store_dlg25.scripts.clear
   $dialog_log.clear
-  Dn1sup::ExtManager.dispatch(store_dlg25, 'confirm_restart', '')
+  Dn1sup::ExtensionStore.dispatch(store_dlg25, 'confirm_restart', '')
   conf_yes = store_dlg25.scripts.grep(/window\.pushResult\(/).last
   assert 'confirm_restart Да — сохранили и ok:true',
          !!conf_yes && conf_yes.include?('"ok":true'), conf_yes.to_s[0, 200]
@@ -1326,7 +1326,7 @@ begin
   $savepanel_result = nil
   store_dlg25.scripts.clear
   $dialog_log.clear
-  Dn1sup::ExtManager.dispatch(store_dlg25, 'confirm_restart', '')
+  Dn1sup::ExtensionStore.dispatch(store_dlg25, 'confirm_restart', '')
   conf_no = store_dlg25.scripts.grep(/window\.pushResult\(/).last
   assert 'confirm_restart Нет — ok:true без сохранения',
          !!conf_no && conf_no.include?('"ok":true'), conf_no.to_s[0, 200]
@@ -1337,7 +1337,7 @@ begin
   def clean_model.modified?; false; end
   def clean_model.entities; []; end
   Sketchup.define_singleton_method(:active_model) { clean_model }
-  assert 'model_needs_first_save? — чистая сцена false', Dn1sup::ExtManager.model_needs_first_save? == false
+  assert 'model_needs_first_save? — чистая сцена false', Dn1sup::ExtensionStore.model_needs_first_save? == false
   # Возвращаем файловую модель для остальных проверок рестарта
   Sketchup.define_singleton_method(:active_model) { fake_model }
   $messagebox_queue = nil
@@ -1345,26 +1345,26 @@ begin
 
   # Диспетчер: restart без exe — тост с ошибкой, quit не вызван
   $quit_called = false
-  Dn1sup::ExtManager.define_singleton_method(:sketchup_exe_path) { nil }
+  Dn1sup::ExtensionStore.define_singleton_method(:sketchup_exe_path) { nil }
   store_dlg25.scripts.clear
-  Dn1sup::ExtManager.dispatch(store_dlg25, 'restart', '')
+  Dn1sup::ExtensionStore.dispatch(store_dlg25, 'restart', '')
   res25 = store_dlg25.scripts.grep(/window\.pushResult\(/).last
   assert 'dispatch restart без exe -> action_result ok:false',
          !!res25 && res25.include?('false'), res25.to_s[0, 200]
   assert 'dispatch restart без exe — quit не вызван', $quit_called == false
-  Dn1sup::ExtManager.define_singleton_method(:sketchup_exe_path, orig_exe)
+  Dn1sup::ExtensionStore.define_singleton_method(:sketchup_exe_path, orig_exe)
 
   # Версия и exe текущего процесса: вопрос показывает версию,
   # поиск предпочитает exe запущенного инстанса.
-  assert 'running_version из стаба', Dn1sup::ExtManager.running_version == [2024, '24.0.0'],
-         Dn1sup::ExtManager.running_version.inspect
+  assert 'running_version из стаба', Dn1sup::ExtensionStore.running_version == [2024, '24.0.0'],
+         Dn1sup::ExtensionStore.running_version.inspect
   assert 'running_version_label с версией',
-         Dn1sup::ExtManager.running_version_label == 'SketchUp 2024 (24.0.0)',
-         Dn1sup::ExtManager.running_version_label.inspect
+         Dn1sup::ExtensionStore.running_version_label == 'SketchUp 2024 (24.0.0)',
+         Dn1sup::ExtensionStore.running_version_label.inspect
   assert 'restart_confirm_message содержит версию',
-         Dn1sup::ExtManager.restart_confirm_message.include?('SketchUp 2024'),
-         Dn1sup::ExtManager.restart_confirm_message
-  proc_exe = Dn1sup::ExtManager.running_process_exe
+         Dn1sup::ExtensionStore.restart_confirm_message.include?('SketchUp 2024'),
+         Dn1sup::ExtensionStore.restart_confirm_message
+  proc_exe = Dn1sup::ExtensionStore.running_process_exe
   assert 'running_process_exe — строка без исключений', proc_exe.is_a?(String), proc_exe.inspect
 
   begin
@@ -1379,12 +1379,12 @@ begin
     FileUtils.mkdir_p(File.dirname(year_fake))
     FileUtils.touch(proc_fake)
     FileUtils.touch(year_fake)
-    orig_proc = Dn1sup::ExtManager.method(:running_process_exe)
-    Dn1sup::ExtManager.define_singleton_method(:running_process_exe) { proc_fake }
+    orig_proc = Dn1sup::ExtensionStore.method(:running_process_exe)
+    Dn1sup::ExtensionStore.define_singleton_method(:running_process_exe) { proc_fake }
     assert 'sketchup_exe_path: exe процесса приоритетнее годовых кандидатов',
-           Dn1sup::ExtManager.sketchup_exe_path == proc_fake,
-           Dn1sup::ExtManager.sketchup_exe_path.inspect
-    Dn1sup::ExtManager.define_singleton_method(:running_process_exe, orig_proc)
+           Dn1sup::ExtensionStore.sketchup_exe_path == proc_fake,
+           Dn1sup::ExtensionStore.sketchup_exe_path.inspect
+    Dn1sup::ExtensionStore.define_singleton_method(:running_process_exe, orig_proc)
   ensure
     ENV['ProgramW6432'], ENV['ProgramFiles'], ENV['ProgramFiles(x86)'] = saved_pf2 if defined?(saved_pf2)
     FileUtils.remove_entry(fake_root2) if defined?(fake_root2) && fake_root2 && File.directory?(fake_root2)
@@ -1392,8 +1392,8 @@ begin
   # Поиск exe: обе раскладки каталога (с 2025 exe лежит в подпапке SketchUp/).
   begin
     # Глушим exe тестового процесса (иначе ruby.exe приоритетнее подмен).
-    orig_proc25 = Dn1sup::ExtManager.method(:running_process_exe)
-    Dn1sup::ExtManager.define_singleton_method(:running_process_exe) { '' }
+    orig_proc25 = Dn1sup::ExtensionStore.method(:running_process_exe)
+    Dn1sup::ExtensionStore.define_singleton_method(:running_process_exe) { '' }
     saved_pf = [ENV['ProgramW6432'], ENV['ProgramFiles'], ENV['ProgramFiles(x86)']]
     fake_root = Dir.mktmpdir('dn1sup_exe')
     ENV['ProgramW6432'] = fake_root
@@ -1404,24 +1404,24 @@ begin
     FileUtils.mkdir_p(File.dirname(old_exe))
     FileUtils.touch(old_exe)
     assert 'sketchup_exe_path: старая раскладка (год совпал)',
-           Dn1sup::ExtManager.sketchup_exe_path == old_exe,
-           Dn1sup::ExtManager.sketchup_exe_path.inspect
+           Dn1sup::ExtensionStore.sketchup_exe_path == old_exe,
+           Dn1sup::ExtensionStore.sketchup_exe_path.inspect
 
     FileUtils.rm_f(old_exe)
     new_exe = File.join(fake_root, 'SketchUp', 'SketchUp 2024', 'SketchUp', 'SketchUp.exe')
     FileUtils.mkdir_p(File.dirname(new_exe))
     FileUtils.touch(new_exe)
     assert 'sketchup_exe_path: новая раскладка (подпапка SketchUp/)',
-           Dn1sup::ExtManager.sketchup_exe_path == new_exe,
-           Dn1sup::ExtManager.sketchup_exe_path.inspect
+           Dn1sup::ExtensionStore.sketchup_exe_path == new_exe,
+           Dn1sup::ExtensionStore.sketchup_exe_path.inspect
 
     other_exe = File.join(fake_root, 'other', 'SketchUp.exe')
     FileUtils.mkdir_p(File.dirname(other_exe))
     FileUtils.touch(other_exe)
     Sketchup.define_singleton_method(:find_support_file) { |*_a| other_exe }
     assert 'sketchup_exe_path: find_support_file приоритетен',
-           Dn1sup::ExtManager.sketchup_exe_path == other_exe,
-           Dn1sup::ExtManager.sketchup_exe_path.inspect
+           Dn1sup::ExtensionStore.sketchup_exe_path == other_exe,
+           Dn1sup::ExtensionStore.sketchup_exe_path.inspect
     Sketchup.singleton_class.send(:remove_method, :find_support_file)
 
     FileUtils.rm_f(new_exe)
@@ -1430,10 +1430,10 @@ begin
     FileUtils.mkdir_p(File.dirname(alien_exe))
     FileUtils.touch(alien_exe)
     assert 'sketchup_exe_path: glob-фолбэк на чужой год',
-           Dn1sup::ExtManager.sketchup_exe_path == alien_exe,
-           Dn1sup::ExtManager.sketchup_exe_path.inspect
+           Dn1sup::ExtensionStore.sketchup_exe_path == alien_exe,
+           Dn1sup::ExtensionStore.sketchup_exe_path.inspect
   ensure
-    Dn1sup::ExtManager.define_singleton_method(:running_process_exe, orig_proc25) if defined?(orig_proc25)
+    Dn1sup::ExtensionStore.define_singleton_method(:running_process_exe, orig_proc25) if defined?(orig_proc25)
     ENV['ProgramW6432'], ENV['ProgramFiles'], ENV['ProgramFiles(x86)'] = saved_pf if defined?(saved_pf)
     Sketchup.singleton_class.send(:remove_method, :find_support_file) rescue nil
     FileUtils.remove_entry(fake_root) if defined?(fake_root) && fake_root && File.directory?(fake_root)
@@ -1441,7 +1441,7 @@ begin
 ensure
   Sketchup.singleton_class.send(:remove_method, :active_model) rescue nil
   Sketchup.singleton_class.send(:remove_method, :quit) rescue nil
-  Dn1sup::ExtManager.instance_variable_set(:@dialog, nil)
+  Dn1sup::ExtensionStore.instance_variable_set(:@dialog, nil)
 end
 
 puts "\n#{$failed.zero? ? 'ALL TESTS PASSED' : "#{$failed} FAILED"}"

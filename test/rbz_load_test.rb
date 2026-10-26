@@ -149,7 +149,7 @@ REGISTRY_VERSIONS = JSON.parse(File.read(File.expand_path('../registry.json', __
                          .each_with_object({}) { |e, h| h[e['id']] = e['version'] }
 
 EXPECTED = {
-  'dn1sup_ext_manager' => ['Dn1sup::ExtManager::VERSION', REGISTRY_VERSIONS['dn1sup_ext_manager']]
+  'dn1sup_extension_store' => ['Dn1sup::ExtensionStore::VERSION', REGISTRY_VERSIONS['dn1sup_extension_store']]
 }.freeze
 
 def const_value(path)
