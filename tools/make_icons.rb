@@ -185,6 +185,45 @@ def fn(v)
   s
 end
 
+# Контур фигуры в path-data (для knockout-композита знака тулбара).
+# Прямоугольник (в т.ч. скруглённый), круг, полигон, штрих с круглыми
+# концами (капсула: штрих-заливка эквивалентна round-cap линии той же ширины).
+def op_path_d(op)
+  case op[0]
+  when :rect
+    x, y, w, h, r = op[1].to_f, op[2].to_f, op[3].to_f, op[4].to_f, op[5].to_f
+    if r <= 0
+      "M#{fn(x)} #{fn(y)}h#{fn(w)}v#{fn(h)}h#{fn(-w)}Z"
+    else
+      "M#{fn(x + r)} #{fn(y)}H#{fn(x + w - r)}" \
+        "A#{fn(r)} #{fn(r)} 0 0 1 #{fn(x + w)} #{fn(y + r)}" \
+        "V#{fn(y + h - r)}A#{fn(r)} #{fn(r)} 0 0 1 #{fn(x + w - r)} #{fn(y + h)}" \
+        "H#{fn(x + r)}A#{fn(r)} #{fn(r)} 0 0 1 #{fn(x)} #{fn(y + h - r)}" \
+        "V#{fn(y + r)}A#{fn(r)} #{fn(r)} 0 0 1 #{fn(x + r)} #{fn(y)}Z"
+    end
+  when :circle
+    cx, cy, r = op[1].to_f, op[2].to_f, op[3].to_f
+    "M#{fn(cx - r)} #{fn(cy)}" \
+      "a#{fn(r)} #{fn(r)} 0 1 0 #{fn(2 * r)} 0" \
+      "a#{fn(r)} #{fn(r)} 0 1 0 #{fn(-2 * r)} 0Z"
+  when :poly
+    'M' + op[1].map { |x, y| "#{fn(x)} #{fn(y)}" }.join('L') + 'Z'
+  when :line
+    x1, y1, x2, y2, w = op[1].to_f, op[2].to_f, op[3].to_f, op[4].to_f, op[5].to_f
+    dx, dy = x2 - x1, y2 - y1
+    len = Math.sqrt(dx * dx + dy * dy)
+    len = 1e-9 if len <= 0
+    nx, ny = -dy / len, dx / len
+    r = w / 2.0
+    # Обход против часовой (в экранных координатах): крышки-полуокружности
+    # выгибаются наружу от отрезка (sweep 0 с этой ориентацией нормали).
+    "M#{fn(x1 + nx * r)} #{fn(y1 + ny * r)}L#{fn(x2 + nx * r)} #{fn(y2 + ny * r)}" \
+      "A#{fn(r)} #{fn(r)} 0 0 0 #{fn(x2 - nx * r)} #{fn(y2 - ny * r)}" \
+      "L#{fn(x1 - nx * r)} #{fn(y1 - ny * r)}" \
+      "A#{fn(r)} #{fn(r)} 0 0 0 #{fn(x1 + nx * r)} #{fn(y1 + ny * r)}Z"
+  end
+end
+
 def op_role(op)
   op[0] == :line ? op[6] : op[-2]
 end
@@ -228,18 +267,89 @@ def tile_svg(color, ops)
   SVG
 end
 
-# Знак тулбара: без плитки, вырезы — настоящая прозрачность (маска).
+# Знак тулбара: без плитки, вырезы — настоящая прозрачность.
+# БЕЗ <mask>: рендерер SVG в SketchUp 2024 маски игнорирует и рисует
+# сплошной квадрат (инцидент 2026-10-26). Вместо маски — knockout-композит:
+# фигуры группируются в слои по opacity (порядок ops сохраняется), каждый
+# слой — один compound path с fill-rule="evenodd".
+# Вырез попадает в слой, только если целиком лежит внутри тел слоя
+# (bbox + центроид): иначе evenodd ЗАЛИЛ бы его там, где он вне тел.
+# Это точно повторяет математику маски для наших данных: вырезы всегда
+# внутри хотя бы одного тела, частично выступающих нет (аудит 2026-10-26).
+def op_bbox(op)
+  case op[0]
+  when :rect
+    [op[1].to_f, op[2].to_f, op[1].to_f + op[3].to_f, op[2].to_f + op[4].to_f]
+  when :circle
+    [op[1].to_f - op[3].to_f, op[2].to_f - op[3].to_f,
+     op[1].to_f + op[3].to_f, op[2].to_f + op[3].to_f]
+  when :poly
+    xs = op[1].map(&:first)
+    ys = op[1].map(&:last)
+    [xs.min.to_f, ys.min.to_f, xs.max.to_f, ys.max.to_f]
+  when :line
+    r = op[5].to_f / 2.0
+    [[op[1].to_f, op[3].to_f].min - r, [op[2].to_f, op[4].to_f].min - r,
+     [op[1].to_f, op[3].to_f].max + r, [op[2].to_f, op[4].to_f].max + r]
+  end
+end
+
+def hole_centroid(op)
+  case op[0]
+  when :rect
+    [op[1].to_f + op[3].to_f / 2.0, op[2].to_f + op[4].to_f / 2.0]
+  when :circle
+    [op[1].to_f, op[2].to_f]
+  when :poly
+    n = op[1].length.to_f
+    [op[1].sum(&:first) / n, op[1].sum(&:last) / n]
+  when :line
+    [(op[1].to_f + op[3].to_f) / 2.0, (op[2].to_f + op[4].to_f) / 2.0]
+  end
+end
+
+def point_in_body?(op, x, y)
+  case op[0]
+  when :rect
+    x0, y0 = op[1].to_f, op[2].to_f
+    x > x0 && x < x0 + op[3].to_f && y > y0 && y < y0 + op[4].to_f
+  when :circle
+    ((x - op[1].to_f)**2 + (y - op[2].to_f)**2) < op[3].to_f**2
+  when :poly
+    in_poly?(op[1], x, y)
+  else
+    raise "point_in_body? не умеет #{op[0]}"
+  end
+end
+
 def sign_svg(color, ops)
+  bodies = ops.select { |op| op_role(op) == :sign }
+  holes = ops.select { |op| op_role(op) == :hole }
+  owned = {}
+  layers = bodies.map { |op| op_opacity(op) }.uniq.map do |opac|
+    group = bodies.select { |op| op_opacity(op) == opac }
+    ux0 = group.map { |op| op_bbox(op)[0] }.min
+    uy0 = group.map { |op| op_bbox(op)[1] }.min
+    ux1 = group.map { |op| op_bbox(op)[2] }.max
+    uy1 = group.map { |op| op_bbox(op)[3] }.max
+    mine = holes.select do |h|
+      hx0, hy0, hx1, hy1 = op_bbox(h)
+      next false unless hx0 >= ux0 && hy0 >= uy0 && hx1 <= ux1 && hy1 <= uy1
+      cx, cy = hole_centroid(h)
+      group.any? { |b| point_in_body?(b, cx, cy) }
+    end
+    mine.each { |h| owned[h] = true }
+    { opac: opac, d: (group + mine).map { |op| op_path_d(op) }.join }
+  end
+  orphans = holes.reject { |h| owned[h] }
+  raise "вырез без слоя (не внутри тел): #{orphans.inspect}" unless orphans.empty?
+  shapes = layers.map do |l|
+    extra = l[:opac] < 1.0 ? format(' fill-opacity="%.2f"', l[:opac]).sub(/0+$/, '').sub(/\.$/, '') : ''
+    "<path d=\"#{l[:d]}\" fill=\"#{color}\"#{extra} fill-rule=\"evenodd\"/>"
+  end.join
   <<~SVG
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
-    <defs>
-    <mask id="g" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24">
-    <rect width="24" height="24" fill="#000000"/>
-    #{ops_svg(ops, '#ffffff', '#000000')}
-    </mask>
-    </defs>
-    <rect width="24" height="24" fill="#{color}" mask="url(#g)"/>
-    </svg>
+    #{shapes}</svg>
   SVG
 end
 

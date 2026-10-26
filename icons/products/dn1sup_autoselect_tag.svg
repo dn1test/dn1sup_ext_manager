@@ -1,9 +1,2 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
-<defs>
-<mask id="g" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24">
-<rect width="24" height="24" fill="#000000"/>
-<path d="M12.59 2.59L11.17 2L4 2L2 4L2 11.17L2.59 12.59L11.29 21.29L14.71 21.29L21.3 14.71L21.3 11.29Z" fill="#ffffff"/><circle cx="7.5" cy="7.5" r="1.7" fill="#000000"/><path d="M16.2 13.2L17 15.2L19 16L17 16.8L16.2 18.8L15.4 16.8L13.4 16L15.4 15.2Z" fill="#000000"/>
-</mask>
-</defs>
-<rect width="24" height="24" fill="#8b5cf6" mask="url(#g)"/>
-</svg>
+<path d="M12.59 2.59L11.17 2L4 2L2 4L2 11.17L2.59 12.59L11.29 21.29L14.71 21.29L21.3 14.71L21.3 11.29ZM5.8 7.5a1.7 1.7 0 1 0 3.4 0a1.7 1.7 0 1 0 -3.4 0ZM16.2 13.2L17 15.2L19 16L17 16.8L16.2 18.8L15.4 16.8L13.4 16L15.4 15.2Z" fill="#8b5cf6" fill-rule="evenodd"/></svg>

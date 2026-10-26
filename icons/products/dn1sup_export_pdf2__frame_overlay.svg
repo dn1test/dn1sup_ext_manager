@@ -1,9 +1,2 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
-<defs>
-<mask id="g" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24">
-<rect width="24" height="24" fill="#000000"/>
-<rect x="3" y="3" width="2.2" height="6" fill="#ffffff"/><rect x="3" y="3" width="6" height="2.2" fill="#ffffff"/><rect x="18.8" y="3" width="2.2" height="6" fill="#ffffff"/><rect x="15" y="3" width="6" height="2.2" fill="#ffffff"/><rect x="3" y="15" width="2.2" height="6" fill="#ffffff"/><rect x="3" y="18.8" width="6" height="2.2" fill="#ffffff"/><rect x="18.8" y="15" width="2.2" height="6" fill="#ffffff"/><rect x="15" y="18.8" width="6" height="2.2" fill="#ffffff"/><path d="M8.6 6.9L12.5 6.9L15.4 9.8L15.4 16.8L14.3 17.9L9.7 17.9L8.6 16.8Z" fill="#ffffff"/><path d="M12.5 6.9L15.4 9.8L12.5 9.8Z" fill="#000000"/>
-</mask>
-</defs>
-<rect width="24" height="24" fill="#f43f5e" mask="url(#g)"/>
-</svg>
+<path d="M3 3h2.2v6h-2.2ZM3 3h6v2.2h-6ZM18.8 3h2.2v6h-2.2ZM15 3h6v2.2h-6ZM3 15h2.2v6h-2.2ZM3 18.8h6v2.2h-6ZM18.8 15h2.2v6h-2.2ZM15 18.8h6v2.2h-6ZM8.6 6.9L12.5 6.9L15.4 9.8L15.4 16.8L14.3 17.9L9.7 17.9L8.6 16.8ZM12.5 6.9L15.4 9.8L12.5 9.8Z" fill="#f43f5e" fill-rule="evenodd"/></svg>
