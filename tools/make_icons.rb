@@ -33,7 +33,8 @@ PRODUCT_TILES = {
   'dn1sup_export_3d'         => '#06b6d4', # экспорт glTF/GLB
   'dn1sup_autoselect_tag'    => '#8b5cf6', # автоназначение тегов
   'dn1sup_export_pdf2'       => '#f43f5e', # многостраничный PDF
-  'dn1sup_sketchup_profiles' => '#6366f1'  # профили SketchUp
+  'dn1sup_sketchup_profiles' => '#6366f1', # профили SketchUp
+  'dn1sup_su2vis'            => '#ec4899'  # эскиз в фото (AI)
 }.freeze
 
 # -- Примитивы знака -----------------------------------------------------------
@@ -142,6 +143,14 @@ GLYPHS = {
     [:circle, 12, 8, 3.7, :sign, 1.0],
     [:poly, [[4.5, 20.5], [4.9, 17.6], [6.5, 15.3], [9.1, 14.1], [12, 14.1], [14.9, 14.1],
             [17.5, 15.3], [19.1, 17.6], [19.5, 20.5]], :sign, 1.0]
+  ],
+  # Кадр фото (солнце и горы вырезаны) и искра «AI» в углу.
+  'dn1sup_su2vis' => [
+    [:rect, 4, 9, 12, 10, 2, :sign, 1.0],
+    [:circle, 7.6, 12.2, 1.4, :hole, 1.0],
+    [:poly, [[4, 19], [9, 12.5], [11.8, 15.3], [13.6, 13.5], [16, 16], [16, 19]], :hole, 1.0],
+    [:poly, [[18.5, 2.5], [19.4, 4.8], [21.7, 5.7], [19.4, 6.6], [18.5, 8.9], [17.6, 6.6],
+            [15.3, 5.7], [17.6, 4.8]], :sign, 1.0]
   ]
 }.freeze
 
@@ -396,11 +405,8 @@ GLYPHS_PDF2.each do |fn_name, ops|
   puts "  ✓ dn1sup_export_pdf2__#{fn_name}.svg + PNG 16/24/32"
 end
 
-# Копия знаков в src-папку менеджера — пакуется в .rbz: фолбэк-иконки
-# общей панели DN1Sup (dn1sup_shared_toolbar.rb).
-src_products = File.join(root, 'src', 'dn1sup_ext_manager', 'icons', 'products')
-FileUtils.mkdir_p(src_products)
-FileUtils.cp_r(Dir.children(signs_dir).map { |f| File.join(signs_dir, f) }, src_products, remove_destination: true)
-puts "Копия знаков в #{src_products}: #{Dir.children(src_products).size} файлов"
+# Общая панель DN1Sup удалена: копия знаков в src-папку менеджера больше
+# не нужна (раньше — фолбэк-иконки dn1sup_shared_toolbar.rb). Источник знаков —
+# icons/products/, раздача в репозитории расширений — tools/apply_icons.rb.
 
 puts "\nГотово! Иконки успешно созданы."

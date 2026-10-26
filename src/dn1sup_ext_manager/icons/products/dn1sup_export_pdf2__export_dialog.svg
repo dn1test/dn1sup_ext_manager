@@ -1,9 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
-<defs>
-<mask id="g" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24">
-<rect width="24" height="24" fill="#000000"/>
-<path d="M3 3.2L10.4 3.2L14.6 7.4L14.6 20.5L13.1 22L4.5 22L3 20.5Z" fill="#ffffff"/><path d="M10.4 3.2L14.6 7.4L10.4 7.4Z" fill="#000000"/><rect x="5.3" y="10.3" width="5.2" height="1.5" rx="0.75" fill="#000000"/><rect x="5.3" y="13.1" width="5.2" height="1.5" rx="0.75" fill="#000000"/><path d="M17.4 12.85L18.13 12.05L19.39 12.4L19.61 13.46L20.48 14.12L21.56 14.08L22.2 15.21L21.61 16.12L21.75 17.2L22.55 17.93L22.2 19.19L21.14 19.41L20.48 20.28L20.52 21.36L19.39 22L18.48 21.41L17.4 21.55L16.67 22.35L15.41 22L15.19 20.94L14.32 20.28L13.24 20.32L12.6 19.19L13.19 18.28L13.05 17.2L12.25 16.47L12.6 15.21L13.66 14.99L14.32 14.12L14.28 13.04L15.41 12.4L16.32 12.99Z" fill="#ffffff"/><circle cx="17.4" cy="17.2" r="2.1" fill="#000000"/>
-</mask>
-</defs>
-<rect width="24" height="24" fill="#f43f5e" mask="url(#g)"/>
-</svg>

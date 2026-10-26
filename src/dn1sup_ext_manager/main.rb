@@ -9,14 +9,12 @@ require 'json'
 require 'fileutils'
 # Апдейтер — из папки расширения (относительный путь).
 Sketchup.require File.join(File.dirname(__FILE__), 'dn1sup_updater')
-# Общая панель инструментов DN1Sup с настройкой кнопок.
-Sketchup.require File.join(File.dirname(__FILE__), 'dn1sup_shared_toolbar')
 
 module Dn1sup
 
   module ExtManager
     ID      = 'dn1sup_ext_manager'
-    VERSION = '0.28.0'
+    VERSION = '0.29.0'
     REPO    = 'dn1test/dn1sup_ext_manager'
     ASSET   = "#{ID}.rbz"
     PAGE_URL     = "https://github.com/#{REPO}/releases"
@@ -2525,12 +2523,8 @@ module Dn1sup
     # Панель инструментов с кнопкой вызова каталога. Тулбар нельзя удалить
     # через API, поэтому кнопка создаётся один раз: после перезагрузки кода
     # UI::Toolbar.new возвращает существующую панель, а дубликаты отсекаются
-    # проверкой tooltip. Пока работает общая панель DN1Sup (параметр
-    # «Показывать отдельные тулбары расширений» выключен), свою не создаём —
-    # тогда её нет и в списке панелей SketchUp.
+    # проверкой tooltip.
     def setup_toolbar
-      return if defined?(Dn1sup::SharedToolbar) && !Dn1sup::SharedToolbar.show_individual?
-
       toolbar = UI::Toolbar.new(TOOLBAR_NAME)
       return if toolbar.any? { |c| c.respond_to?(:tooltip) && c.tooltip == CMD_TOOLTIP }
 
@@ -2564,14 +2558,8 @@ module Dn1sup
           send_products_to_dialog(force: false) if @dialog
         end
       end
-      menu.add_item('Кнопки общей панели…') { Dn1sup::SharedToolbar.open_settings_dialog }
-
       # Кнопка с иконкой на панели инструментов
       setup_toolbar
-
-      # Общая панель DN1Sup: собирается опросом, как только состав доступных
-      # констант кнопок стабилен (обычно ~1 с после старта); потолок — 15 с.
-      Dn1sup::SharedToolbar.startup_when_ready
 
       # Фоновая проверка обновлений менеджера при запуске (сеть в потоке,
       # результат — ненавязчивое уведомление, без модальных диалогов).
